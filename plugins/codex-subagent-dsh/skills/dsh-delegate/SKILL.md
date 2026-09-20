@@ -9,7 +9,7 @@ Keep routing and acceptance with the main Codex agent. Decide whether the task f
 
 ## Authentication
 
-Call `dsh_status` before the first delegation. If DSH is not connected, ask the user to run `node <actual-plugin-root>/runtime/connect.mjs` in their own terminal and enter the DSH startup login URL there. `<actual-plugin-root>` is the installed directory containing `.codex-plugin/plugin.json`; do not assume the plugin cache contains this repository's `package.json`. Never ask the user to paste that URL, its token, or stored credentials into the conversation. Do not put credentials in tool arguments, task context, logs, or files returned to the model.
+Call `dsh_status` before the first delegation and follow its structured state. For `dsh_not_running`, tell the user to start DSH at the returned origin, then check again; do not ask them to run the connection command yet. For `authentication_required`, show the returned `connectCommand` exactly and ask the user to run it in their own terminal, then paste the DSH startup login URL into that terminal. For `ready`, continue without setup instructions. Never ask the user to paste the login URL, its token, or stored credentials into the conversation. Do not put credentials in tool arguments, task context, logs, or files returned to the model.
 
 ## Task scope
 
@@ -23,7 +23,7 @@ Give `dsh_submit` a concrete goal, necessary context, absolute `cwd`, mode, allo
 
 ## Four tools
 
-- `dsh_status`: inspect connection and service capability without creating a task.
+- `dsh_status`: distinguish `ready`, `dsh_not_running`, and `authentication_required` without creating a task; use its next action and exact installed connection command.
 - `dsh_submit`: create one bounded task. Preserve its returned `taskId` and the conversation key.
 - `dsh_task`: query or wait for a bounded interval. For an unknown task, perform bounded read-only reconciliation of its original DSH session. Complete, correlated history plus an idle session and empty queues can recover a terminal state and result. A running session or incomplete/conflicting evidence remains unknown. A wait timeout does not cancel the task. Use moderate waits instead of rapid polling.
 - `dsh_cancel`: request a stop. Treat `cancel_requested` as pending until task state confirms termination; cancellation does not roll back file changes.

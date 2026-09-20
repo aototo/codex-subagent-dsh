@@ -22,6 +22,9 @@ class FakeDsh implements DshApi {
   queued = false;
   promptError = false;
   foreignMessage = false;
+  reachable = true;
+  statusError?: string;
+  async probe() { return this.reachable; }
   async rpc<T = any>(method: string, request: any): Promise<T> {
     if (method === 'session/create') { this.sid = request.sessionId; return { sessionId: this.sid } as T; }
     if (method === 'session/prompt') {
@@ -33,7 +36,10 @@ class FakeDsh implements DshApi {
       return { accepted: true } as T;
     }
     if (method === 'session/cancel') { this.cancels++; this.running = false; this.emit('turn/end', { turn: 1, reason: { kind: 'aborted' } }); return { accepted: true } as T; }
-    if (method === 'session/list') return { items: [{ sessionId: this.sid, running: this.running, projections: { asOfSeq: this.seq - 1, values: { inbox: { 'next-step': [], 'next-turn': this.queued ? ['pending'] : [] } } } }] } as T;
+    if (method === 'session/list') {
+      if (this.statusError) throw Object.assign(new Error(this.statusError), { code: this.statusError });
+      return { items: [{ sessionId: this.sid, running: this.running, projections: { asOfSeq: this.seq - 1, values: { inbox: { 'next-step': [], 'next-turn': this.queued ? ['pending'] : [] } } } }] } as T;
+    }
     throw new Error('unexpected RPC');
   }
   async follow(sessionId: string, handlers: FollowHandlers) {
@@ -56,6 +62,31 @@ async function fixture(t: any, timeout = 10000) {
   const input: SubmitInput = { conversationKey: 'test', requestId: 'request', goal: 'inspect', cwd: root, mode: 'read', acceptanceCriteria: ['report evidence'] };
   return { root, config, client, store, manager, input };
 }
+
+test('status distinguishes stopped DSH, authentication setup, and ready state', async t => {
+  const { manager, client } = await fixture(t);
+  client.reachable = false;
+  assert.deepEqual(await manager.status('node "/plugin/runtime/connect.mjs"'), {
+    origin: client.origin,
+    tools: ['dsh_status', 'dsh_submit', 'dsh_task', 'dsh_cancel'],
+    connected: false,
+    dshRunning: false,
+    state: 'dsh_not_running',
+    code: 'DSH_NOT_RUNNING',
+    nextAction: 'start_dsh',
+    guidance: `Start DSH at ${client.origin}, then call dsh_status again.`,
+  });
+  client.reachable = true;
+  client.statusError = 'AUTH_REQUIRED';
+  const auth = await manager.status('node "/plugin/runtime/connect.mjs"');
+  assert.equal(auth.state, 'authentication_required');
+  assert.equal(auth.dshRunning, true);
+  assert.equal((auth as any).connectCommand, 'node "/plugin/runtime/connect.mjs"');
+  client.statusError = undefined;
+  const ready = await manager.status('unused');
+  assert.equal(ready.state, 'ready');
+  assert.equal(ready.connected, true);
+});
 
 test('submit deduplicates and returns correlated final output, excluding a wrong-turn message', async t => {
   const { manager, input, client } = await fixture(t);

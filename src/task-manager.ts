@@ -45,9 +45,38 @@ export class TaskManager {
   private closed = false;
   constructor(readonly config: BridgeConfig, readonly client: DshApi, readonly store: TaskStore) { store.markOrphans(); }
 
-  async status() {
-    await this.client.rpc('session/list', {});
-    return { connected: true, origin: this.client.origin, tools: ['dsh_status', 'dsh_submit', 'dsh_task', 'dsh_cancel'], taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: 'conversationKey is logical grouping, not authentication', permissionHandling: 'Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits.' };
+  async status(connectCommand: string) {
+    const base = { origin: this.client.origin, tools: ['dsh_status', 'dsh_submit', 'dsh_task', 'dsh_cancel'] };
+    if (!await this.client.probe()) {
+      return {
+        ...base,
+        connected: false,
+        dshRunning: false,
+        state: 'dsh_not_running',
+        code: 'DSH_NOT_RUNNING',
+        nextAction: 'start_dsh',
+        guidance: `Start DSH at ${this.client.origin}, then call dsh_status again.`,
+      };
+    }
+    try {
+      await this.client.rpc('session/list', {});
+    } catch (error) {
+      const code = (error as { code?: unknown })?.code;
+      if (code === 'AUTH_REQUIRED' || code === 'CREDENTIAL_UNAVAILABLE') {
+        return {
+          ...base,
+          connected: false,
+          dshRunning: true,
+          state: 'authentication_required',
+          code,
+          nextAction: 'run_connect_command',
+          connectCommand,
+          guidance: 'Run connectCommand in a local terminal and paste the current DSH login URL there. Never paste the login URL or credentials into chat.',
+        };
+      }
+      throw error;
+    }
+    return { ...base, connected: true, dshRunning: true, state: 'ready', taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: 'conversationKey is logical grouping, not authentication', permissionHandling: 'Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits.' };
   }
 
   private async normalize(input: SubmitInput): Promise<SubmitInput> {

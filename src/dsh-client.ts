@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createConnection } from 'node:net';
 import WebSocket, { type RawData } from 'ws';
 import { loadCredential } from './auth.js';
 import { normalizeLoopbackOrigin, type BridgeConfig } from './config.js';
@@ -137,6 +138,28 @@ export class DshClient implements DshApi {
     } catch {
       throw new DshError('INVALID_ORIGIN', 'The configured DSH origin must be a loopback HTTP origin', false);
     }
+  }
+
+  async probe(): Promise<boolean> {
+    const url = new URL(this.origin);
+    const hostname = url.hostname.startsWith('[') && url.hostname.endsWith(']')
+      ? url.hostname.slice(1, -1)
+      : url.hostname;
+    const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+    const timeoutMs = Math.min(this.#config.rpcTimeoutMs, 1500);
+    return await new Promise<boolean>((resolve) => {
+      const socket = createConnection({ host: hostname, port });
+      let settled = false;
+      const finish = (reachable: boolean) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        resolve(reachable);
+      };
+      socket.once('connect', () => finish(true));
+      socket.once('error', () => finish(false));
+      socket.setTimeout(timeoutMs, () => finish(false));
+    });
   }
 
   async #credentialCookie(): Promise<string> {

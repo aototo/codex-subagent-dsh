@@ -40153,6 +40153,9 @@ var StdioServerTransport = class {
   }
 };
 
+// src/mcp-server.ts
+import { fileURLToPath } from "node:url";
+
 // src/config.ts
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -40188,6 +40191,7 @@ function loadConfig(env = process.env) {
 
 // src/dsh-client.ts
 import { randomUUID } from "node:crypto";
+import { createConnection } from "node:net";
 
 // node_modules/ws/wrapper.mjs
 var import_stream = __toESM(require_stream(), 1);
@@ -40392,6 +40396,25 @@ var DshClient = class {
     } catch {
       throw new DshError("INVALID_ORIGIN", "The configured DSH origin must be a loopback HTTP origin", false);
     }
+  }
+  async probe() {
+    const url2 = new URL(this.origin);
+    const hostname3 = url2.hostname.startsWith("[") && url2.hostname.endsWith("]") ? url2.hostname.slice(1, -1) : url2.hostname;
+    const port = Number(url2.port || (url2.protocol === "https:" ? 443 : 80));
+    const timeoutMs = Math.min(this.#config.rpcTimeoutMs, 1500);
+    return await new Promise((resolve3) => {
+      const socket = createConnection({ host: hostname3, port });
+      let settled = false;
+      const finish = (reachable) => {
+        if (settled) return;
+        settled = true;
+        socket.destroy();
+        resolve3(reachable);
+      };
+      socket.once("connect", () => finish(true));
+      socket.once("error", () => finish(false));
+      socket.setTimeout(timeoutMs, () => finish(false));
+    });
   }
   async #credentialCookie() {
     try {
@@ -41025,9 +41048,38 @@ var TaskManager = class {
   cancelChecks = /* @__PURE__ */ new Set();
   recoveries = /* @__PURE__ */ new Map();
   closed = false;
-  async status() {
-    await this.client.rpc("session/list", {});
-    return { connected: true, origin: this.client.origin, tools: ["dsh_status", "dsh_submit", "dsh_task", "dsh_cancel"], taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: "conversationKey is logical grouping, not authentication", permissionHandling: "Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits." };
+  async status(connectCommand2) {
+    const base = { origin: this.client.origin, tools: ["dsh_status", "dsh_submit", "dsh_task", "dsh_cancel"] };
+    if (!await this.client.probe()) {
+      return {
+        ...base,
+        connected: false,
+        dshRunning: false,
+        state: "dsh_not_running",
+        code: "DSH_NOT_RUNNING",
+        nextAction: "start_dsh",
+        guidance: `Start DSH at ${this.client.origin}, then call dsh_status again.`
+      };
+    }
+    try {
+      await this.client.rpc("session/list", {});
+    } catch (error62) {
+      const code = error62?.code;
+      if (code === "AUTH_REQUIRED" || code === "CREDENTIAL_UNAVAILABLE") {
+        return {
+          ...base,
+          connected: false,
+          dshRunning: true,
+          state: "authentication_required",
+          code,
+          nextAction: "run_connect_command",
+          connectCommand: connectCommand2,
+          guidance: "Run connectCommand in a local terminal and paste the current DSH login URL there. Never paste the login URL or credentials into chat."
+        };
+      }
+      throw error62;
+    }
+    return { ...base, connected: true, dshRunning: true, state: "ready", taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: "conversationKey is logical grouping, not authentication", permissionHandling: "Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits." };
   }
   async normalize(input2) {
     const cwd = await realpath(input2.cwd);
@@ -41439,7 +41491,8 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
 var config2 = loadConfig();
 var store = new TaskStore(config2.stateDir);
 var manager = new TaskManager(config2, new DshClient(config2), store);
-var server = new McpServer({ name: "codex-subagent-dsh", version: "0.1.0" });
+var server = new McpServer({ name: "codex-subagent-dsh", version: "0.1.1" });
+var connectCommand = `node ${JSON.stringify(fileURLToPath(new URL("./connect.mjs", import.meta.url)))}`;
 var key = external_exports.string().min(1).max(128);
 var scope = { conversationKey: key, taskId: external_exports.string().uuid() };
 var content = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
@@ -41456,7 +41509,7 @@ async function guarded(work) {
     return { ...content({ error: typeof code === "string" ? code : "REQUEST_FAILED", message: message.slice(0, 400), guidance: "For authentication errors run the local connect command. Do not paste login links or credentials into chat." }), isError: true };
   }
 }
-server.registerTool("dsh_status", { description: "Check the configured local DSH connection without creating a task. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.", inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, () => guarded(() => manager.status()));
+server.registerTool("dsh_status", { description: "Check whether local DSH is running and authenticated without creating a task. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.", inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, () => guarded(() => manager.status(connectCommand)));
 server.registerTool("dsh_submit", {
   description: "Delegate one bounded task to a new local DSH session. Use a stable conversationKey and requestId; duplicates do not resubmit. Main agent retains final acceptance. Write mode requires a clean, separate Git linked worktree and its HEAD baseline. Read mode is a task instruction, not a sandbox.",
   inputSchema: { conversationKey: key, requestId: key, goal: external_exports.string().min(1).max(16e3), context: external_exports.string().max(32e3).optional(), cwd: external_exports.string().min(1).max(4096), mode: external_exports.enum(["read", "write"]), allowedPaths: external_exports.array(external_exports.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: external_exports.array(external_exports.string().min(1).max(2e3)).min(1).max(30), baselineCommit: external_exports.string().regex(/^[a-fA-F0-9]{40}$/).optional() },

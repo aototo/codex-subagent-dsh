@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { loadConfig } from './config.js';
 import { DshClient } from './dsh-client.js';
@@ -10,7 +11,8 @@ import type { TaskRecord } from './types.js';
 const config = loadConfig();
 const store = new TaskStore(config.stateDir);
 const manager = new TaskManager(config, new DshClient(config), store);
-const server = new McpServer({ name: 'codex-subagent-dsh', version: '0.1.0' });
+const server = new McpServer({ name: 'codex-subagent-dsh', version: '0.1.1' });
+const connectCommand = `node ${JSON.stringify(fileURLToPath(new URL('./connect.mjs', import.meta.url)))}`;
 const key = z.string().min(1).max(128);
 const scope = { conversationKey: key, taskId: z.string().uuid() };
 const content = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value) }] });
@@ -27,7 +29,7 @@ async function guarded(work: () => Promise<unknown>) {
     return { ...content({ error: typeof code === 'string' ? code : 'REQUEST_FAILED', message: message.slice(0, 400), guidance: 'For authentication errors run the local connect command. Do not paste login links or credentials into chat.' }), isError: true };
   }
 }
-server.registerTool('dsh_status', { description: 'Check the configured local DSH connection without creating a task. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.', inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, () => guarded(() => manager.status()));
+server.registerTool('dsh_status', { description: 'Check whether local DSH is running and authenticated without creating a task. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.', inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, () => guarded(() => manager.status(connectCommand)));
 server.registerTool('dsh_submit', {
   description: 'Delegate one bounded task to a new local DSH session. Use a stable conversationKey and requestId; duplicates do not resubmit. Main agent retains final acceptance. Write mode requires a clean, separate Git linked worktree and its HEAD baseline. Read mode is a task instruction, not a sandbox.',
   inputSchema: { conversationKey: key, requestId: key, goal: z.string().min(1).max(16000), context: z.string().max(32000).optional(), cwd: z.string().min(1).max(4096), mode: z.enum(['read', 'write']), allowedPaths: z.array(z.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: z.array(z.string().min(1).max(2000)).min(1).max(30), baselineCommit: z.string().regex(/^[a-fA-F0-9]{40}$/).optional() },

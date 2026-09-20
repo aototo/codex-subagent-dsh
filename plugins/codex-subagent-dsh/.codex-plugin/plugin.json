@@ -1,6 +1,6 @@
 {
   "name": "codex-subagent-dsh",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Delegate bounded local tasks from Codex to a running DeepSeek Harness instance while Codex keeps routing and acceptance responsibility.",
   "author": {
     "name": "codex-subagent-dsh contributors"

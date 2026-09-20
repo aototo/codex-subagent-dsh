@@ -62,13 +62,23 @@ codex plugin marketplace remove codex-subagent-dsh
 
 ## 首次连接
 
-通过 marketplace 安装后，先运行 `codex plugin list --json`，找到 `codex-subagent-dsh` 的 `source.path`。在本地终端运行该目录中的连接入口：
+通过 marketplace 安装后，在 Codex 中直接说：
+
+> 检查 DSH 连接状态。
+
+Codex 会调用 `dsh_status`：
+
+- 如果 DSH 未启动，会明确提示先启动 DSH，并显示检查的本机地址。
+- 如果 DSH 已启动但尚未认证，会给出包含实际安装目录的完整连接命令。
+- 如果状态为 `ready`，可以直接派发任务。
+
+首次认证时，把 Codex 返回的完整命令复制到本地终端执行，例如：
 
 ```bash
 node <实际插件根目录>/runtime/connect.mjs
 ```
 
-`<实际插件根目录>` 是安装后包含 `.codex-plugin/plugin.json` 的目录，不要假定缓存中仍有本仓库的 `package.json`。按终端提示输入 DSH 启动登录链接。登录链接和 token 不要粘贴到 Codex 对话、MCP 参数或项目文件中；连接入口只在本机处理并保存凭证。凭证失效时重新运行该命令。插件不会安装、升级或重启 DSH。
+命令中的实际插件目录由插件自动解析，不需要运行 `codex plugin list` 手动查找。按终端提示输入 DSH 启动登录链接。登录链接和 token 不要粘贴到 Codex 对话、MCP 参数或项目文件中；连接入口只在本机处理并保存凭证。凭证失效时，`dsh_status` 会再次返回连接命令。插件不会安装、升级或重启 DSH。
 
 ## 使用方式
 
@@ -76,7 +86,7 @@ node <实际插件根目录>/runtime/connect.mjs
 
 | 工具 | 用途 |
 | --- | --- |
-| `dsh_status` | 检查本地 DSH 的连接与能力；不查询具体任务状态 |
+| `dsh_status` | 区分 DSH 未启动、需要认证和已就绪，并返回明确下一步；不查询具体任务状态 |
 | `dsh_submit` | 提交一个边界明确的任务，返回 taskId；相同请求不会重复派发 |
 | `dsh_task` | 查询指定任务的状态、结果，或进行有界等待；等待超时不取消任务 |
 | `dsh_cancel` | 请求取消指定任务；请求被接受不等于已停止，也不回滚文件修改 |
@@ -92,7 +102,8 @@ node <实际插件根目录>/runtime/connect.mjs
 ## 故障排查
 
 - `node` 找不到或版本过低：确认 `node --version` 至少为 22.13，然后重新构建。
-- 未连接或认证失效：在本地终端重新运行 `node <实际插件根目录>/runtime/connect.mjs`，不要把登录链接发给模型。
+- DSH 未启动：`dsh_status` 返回 `dsh_not_running`；先启动返回地址对应的 DSH，再检查状态。
+- 未连接或认证失效：`dsh_status` 返回 `authentication_required` 和完整 `connectCommand`；在本地终端运行该命令，不要把登录链接发给模型。
 - `runtime/server.mjs` 不存在：运行 `npm ci && npm run build`。
 - 任务长时间保持 `running`：当前版本无法可靠识别 DSH 是否正在等待权限或用户输入，状态可能继续显示 `running`。请到 DSH 查看并处理对应请求；插件不会代替用户授权或回答。
 - 任务为 `unknown`：使用原 taskId 和 conversationKey 再调用 `dsh_task`，插件会有界读取原会话核对终态；不会创建或重派任务。证据不足时仍保持 unknown，请到 DSH 和工作区核对，写任务占用不会提前释放。
@@ -113,7 +124,7 @@ node <实际插件根目录>/runtime/connect.mjs
 
 ## 开发验证
 
-`npm run check` 执行类型检查、可分发构建与 60 项自动化测试。自动化集成测试使用本地 HTTP/WS 模拟 DSH，不代表真实模型任务已完成。
+`npm run check` 执行类型检查、可分发构建与 62 项自动化测试。自动化集成测试使用本地 HTTP/WS 模拟 DSH，不代表真实模型任务已完成。
 
 完成首次连接后，以下命令会向真实 DSH 提交一次受限任务：
 

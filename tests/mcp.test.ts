@@ -1,13 +1,56 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, copyFile, rm } from 'node:fs/promises';
+import { mkdtemp, copyFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { connect } from '../src/auth.js';
+
+test('dsh_status distinguishes a stopped DSH from first-time authentication', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-status-e2e-'));
+  const stateDir = path.join(root, 'state');
+  await copyFile(path.resolve('plugins/codex-subagent-dsh/runtime/server.mjs'), path.join(root, 'server.mjs'));
+  await copyFile(path.resolve('plugins/codex-subagent-dsh/runtime/connect.mjs'), path.join(root, 'connect.mjs'));
+  const http = createServer((_req, res) => { res.writeHead(401); res.end(); });
+  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+  const origin = 'http://127.0.0.1:' + (http.address() as any).port;
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [path.join(root, 'server.mjs')],
+    cwd: root,
+    env: { PATH: process.env.PATH!, DSH_SUBAGENT_HOME: stateDir, DSH_SUBAGENT_URL: origin },
+    stderr: 'pipe',
+  });
+  transport.stderr?.on('data', () => {});
+  const client = new Client({ name: 'status-test', version: '1' });
+  await client.connect(transport);
+  t.after(async () => {
+    await client.close().catch(() => {});
+    http.closeAllConnections();
+    if (http.listening) await new Promise<void>(resolve => http.close(() => resolve()));
+    await rm(root, { recursive: true, force: true });
+  });
+  const status = async () => {
+    const result = await client.callTool({ name: 'dsh_status', arguments: {} });
+    assert.notEqual(result.isError, true, JSON.stringify(result));
+    return JSON.parse((result.content as any)[0].text);
+  };
+
+  const authenticationRequired = await status();
+  assert.equal(authenticationRequired.state, 'authentication_required');
+  assert.equal(authenticationRequired.dshRunning, true);
+  assert.equal(authenticationRequired.connectCommand, `node ${JSON.stringify(path.join(await realpath(root), 'connect.mjs'))}`);
+
+  http.closeAllConnections();
+  await new Promise<void>(resolve => http.close(() => resolve()));
+  const stopped = await status();
+  assert.equal(stopped.state, 'dsh_not_running');
+  assert.equal(stopped.code, 'DSH_NOT_RUNNING');
+  assert.equal(stopped.dshRunning, false);
+});
 
 test('relocated bundled MCP: authenticate, four tools, correlated result, concurrent cancel and shutdown recovery', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'dsh-mcp-e2e-'));

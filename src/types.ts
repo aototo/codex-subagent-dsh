@@ -45,6 +45,7 @@ export interface FollowHandlers {
 export interface Subscription { close(): void }
 export interface DshApi {
   origin: string;
+  probe(): Promise<boolean>;
   rpc<T = any>(method: string, request: any): Promise<T>;
   follow(sessionId: string, handlers: FollowHandlers): Promise<Subscription>;
 }

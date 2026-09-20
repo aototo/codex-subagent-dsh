@@ -50,6 +50,8 @@ class RecoveryDsh implements DshApi {
   eventDuringList = false;
   handlers?: FollowHandlers;
 
+  async probe() { return true; }
+
   async rpc<T = any>(method: string, _request: any): Promise<T> {
     this.methods.push(method);
     if (method === 'session/cancel') {
