@@ -1,0 +1,13 @@
+.DS_Store
+node_modules/
+dist/
+coverage/
+*.log
+
+# Local connection settings and runtime state must not be published.
+.env
+.env.*
+!.env.example
+.local/
+.runtime/
+*.cookie

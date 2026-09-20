@@ -1,0 +1,35 @@
+{
+  "name": "codex-subagent-dsh",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aototo/codex-subagent-dsh.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0 <23 || >=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm test",
+    "connect": "node plugins/codex-subagent-dsh/runtime/connect.mjs",
+    "start": "node plugins/codex-subagent-dsh/runtime/server.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "ws": "8.21.3",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "esbuild": "0.28.2",
+    "tsx": "^4.20.0",
+    "typescript": "5.9.3"
+  }
+}
