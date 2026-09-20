@@ -12,7 +12,7 @@
 - MCP owner 退出时，运行中的任务保持 `unknown`；插件没有误报完成或自动重发。
 - 使用原 `taskId`、`conversationKey`、Session 和 attempt 的完整证据，可以按需恢复已完成结果或已取消终态。
 - 安装缓存中的清单、Skill 和运行时产物与仓库构建结果一致。
-- 隔离 Codex 配置成功从 GitHub `main` 获取 marketplace，并安装启用 `codex-subagent-dsh@codex-subagent-dsh` 版本 `0.1.0`；记录的 marketplace 来源类型为 Git。
+- 隔离 Codex 配置成功从 GitHub `main` 获取 marketplace，并安装启用 `codex-subagent-dsh@codex-subagent-dsh` 版本 `0.1.1`；记录的 marketplace 来源类型为 Git，新运行时对真实 DSH 返回 `ready`。
 - 状态诊断覆盖 DSH 未启动、DSH 已启动但需要认证、连接就绪三种情况；认证状态返回安装目录中的准确连接命令。
 
 ## 验证边界
