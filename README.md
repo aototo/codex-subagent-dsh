@@ -31,7 +31,7 @@ plugins/codex-subagent-dsh/runtime/connect.mjs
 npm run check
 ```
 
-插件清单位于 `plugins/codex-subagent-dsh/.codex-plugin/plugin.json`，MCP 配置使用插件根目录相对路径启动 `runtime/server.mjs`。本机 marketplace 安装快照和新桌面对话的直接调用已验证；从 GitHub 来源安装后的干净用户配置仍需验证。
+插件清单位于 `plugins/codex-subagent-dsh/.codex-plugin/plugin.json`，MCP 配置使用插件根目录相对路径启动 `runtime/server.mjs`。本机 marketplace 安装快照、新桌面对话的直接调用，以及隔离 Codex 配置从 GitHub 来源安装均已验证。
 
 ## 从 GitHub 安装
 
@@ -101,7 +101,7 @@ node <实际插件根目录>/runtime/connect.mjs
 
 ## 当前限制
 
-- GitHub marketplace 的干净安装回归尚未完成；本地 marketplace 中的新对话工具发现和只读任务已验证，关闭测试窗口的生命周期边界已验证；整个应用正常退出并重开已验证；崩溃尚未验证。
+- GitHub marketplace 的隔离配置安装已验证，Git 来源的更新与卸载回归尚未完成；本地 marketplace 中的新对话工具发现和只读任务已验证，关闭测试窗口的生命周期边界已验证；整个应用正常退出并重开已验证；崩溃尚未验证。
 - 每个任务使用独立 DSH Session；不支持继续原会话返工或任务列表。支持查询时按需恢复已证实的终态与结果，不支持后台自动恢复或运行中任务接管。
 - Codex/MCP 进程退出后，插件不保证继续计时、自动取消或唤醒对话。
 - 插件无法可靠区分正常执行与等待 DSH 权限或用户输入；等待期间任务可能一直显示 `running`。
