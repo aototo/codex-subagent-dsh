@@ -13,6 +13,14 @@
 - 已在本机回环地址启动的 DSH；默认地址为 `http://127.0.0.1:3080`
 - DSH 启动时生成的登录链接，用于首次本地连接
 
+可选的 Session 模型固定需要把仓库内的 DSH companion 安装到 Codex 实际连接的同一个 DSH profile。它不会修改 DSH 的共享默认模型：
+
+```bash
+dsh plugin --profile web add -w /absolute/path/to/codex-subagent-dsh/plugins/codex-subagent-dsh/dsh-companion
+```
+
+安装后重启该 profile。当前兼容性门禁针对 `@deepseek-ai/dsh` 0.1.5-rc.1、其实际加载的 `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 和 Cordis 4.0.2；其他组合必须重新运行隔离主机探针。
+
 ## 构建
 
 ```bash
@@ -88,8 +96,8 @@ node <实际插件根目录>/runtime/connect.mjs
 
 | 工具 | 用途 |
 | --- | --- |
-| `dsh_status` | 区分 DSH 未启动、需要认证和已就绪，并返回明确下一步；不查询具体任务状态 |
-| `dsh_submit` | 提交一个边界明确的任务，返回 taskId；相同请求不会重复派发 |
+| `dsh_status` | 区分 DSH 未启动、需要认证和已就绪；`includeModels: true` 会通过 companion 返回净化后的 provider/model/effort 目录 |
+| `dsh_submit` | 提交一个边界明确的任务，返回 taskId；可选 `modelSelection` 在首个 prompt 前固定该 Session 的精确 route；相同请求不会重复派发 |
 | `dsh_task` | 查询指定任务的状态、结果，或进行有界等待；等待超时不取消任务 |
 | `dsh_cancel` | 请求取消指定任务；请求被接受不等于已停止，也不回滚文件修改 |
 
@@ -101,6 +109,10 @@ node <实际插件根目录>/runtime/connect.mjs
 
 写任务只支持主 Agent 已准备并核对基线提交的 Git linked worktree。DSH 返回完成后，主 Agent 仍需独立检查实际产物；取消请求不回滚已经发生的修改。
 
+需要指定模型时，先调用 `dsh_status` 并传 `includeModels: true`，从返回目录复制精确的 `provider`、`model` 和可选 `reasoningEffort`。不要根据任务关键词猜 route。`modelSelection` 一旦为该 Session 持久化便不可更改，且参与幂等参数哈希；配置、能力或持久化确认失败时不会发送首个 prompt。未传 `modelSelection` 时保持原有默认路由行为。
+
+`dsh_task` 将 `requested`、`configured` 与真实 `request/header` 观察到的 `actualRequest` 分开返回。显式指定模型的 completed 任务必须有匹配的真实 header；不匹配或缺失时不会静默回退并报告成功。
+
 ## 故障排查
 
 - `node` 找不到或版本过低：确认 `node --version` 至少为 22.13，然后重新构建。
@@ -111,6 +123,8 @@ node <实际插件根目录>/runtime/connect.mjs
 - 任务为 `unknown`：使用原 taskId 和 conversationKey 再调用 `dsh_task`，插件会有界读取原会话核对终态；不会创建或重派任务。证据不足时仍保持 unknown，请到 DSH 和工作区核对，写任务占用不会提前释放。
 - 取消后仍显示 `cancel_requested`：这只表示停止请求已发送，必须等到可确认的终止状态；已产生的文件修改不会自动恢复。
 - Codex 找不到工具：确认插件已安装并启用，更新后开启新对话加载工具；再核对构建产物和清单，参见 `docs/COMPATIBILITY.md`。
+- `MODEL_ROUTING_COMPANION_MISSING`：把 bundled companion 安装到 `DSH_SUBAGENT_URL` 指向的同一 profile 并重启；不要用 `session/selectModel` 代替，它会写共享默认模型。
+- `MODEL_ROUTING_CAPABILITY_UNSUPPORTED` 或模型配置失败：用 `dsh_status { includeModels: true }` 重新读取目录，并核对精确 provider/model/effort；插件不会自动换模型。
 
 ## 当前限制
 
@@ -126,7 +140,13 @@ node <实际插件根目录>/runtime/connect.mjs
 
 ## 开发验证
 
-`npm run check` 执行类型检查、可分发构建与 62 项自动化测试。自动化集成测试使用本地 HTTP/WS 模拟 DSH，不代表真实模型任务已完成。
+`npm run check` 执行类型检查、可分发构建与 74 项自动化测试。以下隔离探针还会启动临时 DSH profile、安装 companion 与 synthetic adapter、验证鉴权、双 Session 隔离、默认 Session 不受影响、冷重启恢复、真实 request header，以及 bundled MCP 的 `dsh_submit`→`dsh_task` 完整链路：
+
+```bash
+DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-companion.mjs
+```
+
+synthetic adapter 只证明路由机制，不证明某个外部 provider 或商业模型在当前用户配置中可用。
 
 完成首次连接后，以下命令会向真实 DSH 提交一次受限任务：
 

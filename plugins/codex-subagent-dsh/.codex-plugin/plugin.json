@@ -1,6 +1,6 @@
 {
   "name": "codex-subagent-dsh",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Delegate bounded local tasks from Codex to a running DeepSeek Harness instance while Codex keeps routing and acceptance responsibility.",
   "author": {
     "name": "codex-subagent-dsh contributors"
@@ -17,7 +17,7 @@
   "interface": {
     "displayName": "DSH Subagent for Codex",
     "shortDescription": "Delegate bounded local tasks to DSH",
-    "longDescription": "A community MCP plugin that lets the main Codex agent submit bounded local work to a running DeepSeek Harness instance, inspect task state, retrieve results, and request cancellation while retaining final verification responsibility.",
+    "longDescription": "A community MCP plugin that lets the main Codex agent submit bounded local work to a running DeepSeek Harness instance, optionally pin one exact model route per Session, inspect task state, retrieve results, and request cancellation while retaining final verification responsibility.",
     "developerName": "codex-subagent-dsh contributors",
     "category": "Developer Tools",
     "capabilities": [

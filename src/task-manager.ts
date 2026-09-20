@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { BridgeConfig } from './config.js';
 import { inspectRecoveryHistory } from './reconcile.js';
+import { discoverableModels, matchesRequestedSelection, modelSelectionFromHeaderEvent, parseModelSelection, validateCapabilities, validateSetResponse } from './model-routing.js';
 import { TaskStore } from './task-store.js';
 import { TERMINAL_STATES, type DshApi, type SessionSnapshot, type SubmitInput, type Subscription, type TaskRecord, type WireEvent } from './types.js';
 
@@ -45,7 +46,7 @@ export class TaskManager {
   private closed = false;
   constructor(readonly config: BridgeConfig, readonly client: DshApi, readonly store: TaskStore) { store.markOrphans(); }
 
-  async status(connectCommand: string) {
+  async status(connectCommand: string, includeModels = false) {
     const base = { origin: this.client.origin, tools: ['dsh_status', 'dsh_submit', 'dsh_task', 'dsh_cancel'] };
     if (!await this.client.probe()) {
       return {
@@ -76,7 +77,33 @@ export class TaskManager {
       }
       throw error;
     }
-    return { ...base, connected: true, dshRunning: true, state: 'ready', taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: 'conversationKey is logical grouping, not authentication', permissionHandling: 'Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits.' };
+    const ready = { ...base, connected: true, dshRunning: true, state: 'ready', taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: 'conversationKey is logical grouping, not authentication', permissionHandling: 'Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits.' };
+    if (!includeModels) return ready;
+    try {
+      const capabilities = await this.client.companionRpc('capabilities.get', {});
+      return {
+        ...ready,
+        modelRouting: {
+          available: true,
+          protocol: 1,
+          persistence: 'session-log',
+          catalog: discoverableModels(capabilities),
+        },
+      };
+    } catch (error) {
+      const remoteCode = safeError(error);
+      const missing = remoteCode === 'HTTP_ERROR';
+      return {
+        ...ready,
+        modelRouting: {
+          available: false,
+          code: missing ? 'MODEL_ROUTING_COMPANION_MISSING' : 'MODEL_ROUTING_CAPABILITY_UNSUPPORTED',
+          guidance: missing
+            ? 'Install and enable the bundled DSH companion in this DSH profile to use modelSelection.'
+            : 'The enabled DSH companion did not return a supported, sanitized model catalog.',
+        },
+      };
+    }
   }
 
   private async normalize(input: SubmitInput): Promise<SubmitInput> {
@@ -88,6 +115,9 @@ export class TaskManager {
     if (input.mode === 'write') {
       if (!input.baselineCommit || !/^[a-f0-9]{40}$/i.test(input.baselineCommit)) throw new Error('write tasks require a full baselineCommit');
       if (!input.allowedPaths?.length) throw new Error('write tasks require allowedPaths');
+    }
+    if (input.modelSelection !== undefined && parseModelSelection(input.modelSelection) === undefined) {
+      throw new Error('modelSelection requires non-empty provider/model and an optional non-empty reasoningEffort');
     }
     return { ...input, cwd };
   }
@@ -161,6 +191,37 @@ export class TaskManager {
       if (!this.active.has(run.task.taskId)) return;
       if (created.sessionId !== run.task.sessionId) { this.uncertain(run, 'SESSION_ID_MISMATCH'); return; }
       if (!this.mayDispatch(run)) return;
+      if (run.task.input.modelSelection !== undefined) {
+        try {
+          validateCapabilities(await this.client.companionRpc('capabilities.get', {}));
+          if (!this.active.has(run.task.taskId) || !this.mayDispatch(run)) return;
+          const receipt = await this.client.companionRpc('selection.set', {
+            sessionId: run.task.sessionId,
+            selection: run.task.input.modelSelection,
+          });
+          if (!this.active.has(run.task.taskId) || !this.mayDispatch(run)) return;
+          const configuredModel = validateSetResponse(receipt, run.task.sessionId, run.task.input.modelSelection);
+          this.update(run, { configuredModel });
+        } catch (error) {
+          if (!this.active.has(run.task.taskId)) return;
+          const current = this.current(run);
+          if (current.state !== 'queued') {
+            this.mayDispatch(run);
+            return;
+          }
+          const remoteCode = safeError(error);
+          this.store.update(run.task.taskId, {
+            state: 'failed',
+            error: remoteCode === 'DSH_REQUEST_FAILED' ? 'MODEL_ROUTING_RESPONSE_INVALID' : remoteCode,
+            guidance: remoteCode === 'HTTP_ERROR'
+              ? 'Install and enable the bundled DSH companion in the addressed DSH profile. No prompt was submitted.'
+              : 'The requested Session model was not durably confirmed. Check companion capabilities and the exact provider/model/effort. No prompt was submitted.',
+          }, ['queued']);
+          this.cleanup(run);
+          return;
+        }
+      }
+      if (!this.mayDispatch(run)) return;
       const sub = await this.client.follow(run.task.sessionId, {
         snapshot: snapshot => {
           if (snapshot.header.id !== run.task.sessionId || snapshot.records?.some(r => r.event?.type === 'turn/start')) { this.uncertain(run, 'SESSION_ALREADY_USED'); return; }
@@ -210,7 +271,17 @@ export class TaskManager {
       return;
     }
     const d = event.data;
-    if (event.type === 'turn/start') {
+    if (event.type === 'request/header') {
+      const actualModel = modelSelectionFromHeaderEvent(event);
+      const requested = run.task.input.modelSelection;
+      if (requested === undefined) return;
+      if (!run.seenPrompt || run.turn === undefined || actualModel === undefined || !matchesRequestedSelection(actualModel, requested)) {
+        void this.client.rpc('session/cancel', { sessionId: run.task.sessionId }).catch(() => undefined);
+        this.uncertain(run, 'MODEL_ROUTE_MISMATCH');
+        return;
+      }
+      this.update(run, { actualModel, actualModelSeq: event.seq, lastSeq: event.seq });
+    } else if (event.type === 'turn/start') {
       if (!run.submitted || (run.turn !== undefined && run.turn !== d.turn)) { this.uncertain(run, 'UNEXPECTED_TURN'); return; }
       run.turn = d.turn;
       this.update(run, { state: this.current(run).state === 'cancel_requested' ? 'cancel_requested' : 'running', turn: d.turn, lastSeq: event.seq, guidance: 'If DSH is awaiting approval or input, handle it in DSH; this client does not auto-answer.' });
@@ -253,6 +324,11 @@ export class TaskManager {
     try {
       if (!await this.quietSession(run, seq)) { this.uncertain(run, 'SESSION_NOT_CONFIRMED_IDLE'); return; }
       if (!this.active.has(run.task.taskId)) return;
+      const latest = this.current(run);
+      if (reason === 'completed' && latest.input.modelSelection !== undefined && latest.actualModel === undefined) {
+        this.uncertain(run, 'MODEL_ROUTE_NOT_OBSERVED');
+        return;
+      }
       if (reason === 'completed' && run.seenPrompt && run.result) this.update(run, { state: 'completed', result: run.result, lastSeq: seq, endReason: reason, guidance: 'Execution ended. Codex must independently verify artifacts and acceptance criteria.' });
       else if (reason === 'aborted' && this.current(run).endReason === 'cancellation_requested') this.update(run, { state: 'cancelled', lastSeq: seq, endReason: reason, guidance: 'DSH termination and empty queue confirmed. Cancellation does not roll back file changes.' });
       else if (reason === 'completed') this.update(run, { state: 'failed', lastSeq: seq, endReason: reason, error: 'NO_VERIFIABLE_RESULT' });
@@ -364,6 +440,7 @@ export class TaskManager {
             turn: history.turn,
             lastSeq: history.terminalSeq,
             result: history.result,
+            ...(history.actualModel === undefined ? {} : { actualModel: history.actualModel, actualModelSeq: history.actualModelSeq }),
             error: null,
             endReason: history.reason,
             guidance: 'Recovered from the complete original DSH history. Codex must independently verify artifacts and acceptance criteria.',

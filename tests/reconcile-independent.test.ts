@@ -11,6 +11,9 @@ function append(s:SessionSnapshot,e:WireEvent){s.records!.push({type:'event',eve
 test('real protocol ordering correlates turnless user prompt and ignores plugin messages',()=>{
  assert.deepEqual(inspectRecoveryHistory(task,history()),{ok:true,turn:1,terminalSeq:5,reason:'completed',result:'actual final'});
 });
+test('legacy unpinned recovery ignores provider-specific request headers',()=>{
+ const s=history();s.records!.splice(4,0,{type:'event',event:{seq:4,type:'request/header',data:{header:{config:{legacy:true,temperature:0.2}}}}});for(let i=5;i<s.records!.length;i++)s.records![i].event.seq=i;s.cursor=6;s.projections!.asOfSeq=6;assert.deepEqual(inspectRecoveryHistory(task,s),{ok:true,turn:1,terminalSeq:6,reason:'completed',result:'actual final'});
+});
 test('history proof rejects incomplete identity, cursor, or turn evidence',()=>{
  const cases:Array<[string,(s:SessionSnapshot)=>void]>=[
  ['foreign session',s=>{s.header.id='foreign';}],['truncated',s=>{s.hasMore=true;}],['missing hasMore',s=>{delete s.hasMore;}],['missing first event',s=>{s.records!.shift();}],['duplicate sequence',s=>{s.records![3].event.seq=2;}],['wrong prompt',s=>{s.records![2].event.data.source.rpcId='another';}],['wrong assistant turn',s=>{s.records![4].event.data.turn=2;}],['projection behind',s=>{s.projections!.asOfSeq=4;}],['foreign user message',s=>{s.records![3].event.data.source={kind:'user',rpcId:'other'};}],['wrong stored turn',s=>{s.records![1].event.data.turn=2;s.records![4].event.data.turn=2;s.records![5].event.data.turn=2;}],['new work after terminal',s=>append(s,{seq:6,type:'turn/start',data:{turn:2}})],['unknown end reason',s=>{s.records![5].event.data.reason.kind='invented';}]

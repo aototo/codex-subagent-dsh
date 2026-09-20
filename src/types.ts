@@ -1,4 +1,9 @@
 export type TaskState = 'queued' | 'running' | 'waiting_permission' | 'waiting_input' | 'completed' | 'failed' | 'cancel_requested' | 'cancelled' | 'unknown';
+export interface ModelSelection {
+  provider: string;
+  model: string;
+  reasoningEffort?: string;
+}
 export interface SubmitInput {
   conversationKey: string;
   requestId: string;
@@ -9,6 +14,7 @@ export interface SubmitInput {
   allowedPaths?: string[];
   acceptanceCriteria: string[];
   baselineCommit?: string;
+  modelSelection?: ModelSelection;
 }
 export interface TaskRecord {
   taskId: string;
@@ -32,6 +38,9 @@ export interface TaskRecord {
   error?: string;
   guidance?: string;
   endReason?: string;
+  configuredModel?: ModelSelection;
+  actualModel?: ModelSelection;
+  actualModelSeq?: number;
 }
 export const TERMINAL_STATES: TaskState[] = ['completed', 'failed', 'cancelled'];
 export interface WireEvent { type: string; seq: number; time?: number; data: any }
@@ -47,5 +56,6 @@ export interface DshApi {
   origin: string;
   probe(): Promise<boolean>;
   rpc<T = any>(method: string, request: any): Promise<T>;
+  companionRpc<T = any>(method: string, request: any): Promise<T>;
   follow(sessionId: string, handlers: FollowHandlers): Promise<Subscription>;
 }

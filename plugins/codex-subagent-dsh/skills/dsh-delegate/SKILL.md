@@ -11,6 +11,12 @@ Keep routing and acceptance with the main Codex agent. Decide whether the task f
 
 Call `dsh_status` before the first delegation and follow its structured state. For `dsh_not_running`, tell the user to start DSH at the returned origin, then check again; do not ask them to run the connection command yet. For `authentication_required`, show the returned `connectCommand` exactly and ask the user to run it in their own terminal, then paste the DSH startup login URL into that terminal. For `ready`, continue without setup instructions. Never ask the user to paste the login URL, its token, or stored credentials into the conversation. Do not put credentials in tool arguments, task context, logs, or files returned to the model.
 
+## Optional model selection
+
+When the user requests an exact DSH model, call `dsh_status` with `includeModels: true` after the connection is ready. Copy the exact `provider`, `model`, and optional `reasoningEffort` identifiers from the sanitized companion catalog into `dsh_submit.modelSelection`. Do not infer routes from task keywords, aliases, or model families. If capability discovery is missing or unsupported, tell the user to install or update the bundled DSH companion in the profile addressed by `DSH_SUBAGENT_URL`; do not change DSH's shared default as a workaround.
+
+Omit `modelSelection` when no exact route was requested so DSH keeps its existing default behavior. A submitted selection is immutable for that Session and is part of the request's idempotency identity. If capability validation, exact selection, or durable persistence fails, the bridge must fail before sending the first prompt and must not silently choose another model.
+
 ## Task scope
 
 Create one random `conversationKey` for the current conversation on its first DSH delegation and reuse it for every `dsh_submit`, `dsh_task`, and `dsh_cancel` call in that conversation. The key is a logical grouping label, not authentication. Use a stable `requestId` for retries of the same logical submission; do not invent a new ID to bypass an unknown result.
@@ -23,8 +29,8 @@ Give `dsh_submit` a concrete goal, necessary context, absolute `cwd`, mode, allo
 
 ## Four tools
 
-- `dsh_status`: distinguish `ready`, `dsh_not_running`, and `authentication_required` without creating a task; use its next action and exact installed connection command.
-- `dsh_submit`: create one bounded task. Preserve its returned `taskId` and the conversation key.
+- `dsh_status`: distinguish `ready`, `dsh_not_running`, and `authentication_required` without creating a task; use its next action and exact installed connection command. Pass `includeModels: true` only when model discovery is needed.
+- `dsh_submit`: create one bounded task. Preserve its returned `taskId` and the conversation key. Include `modelSelection` only when the exact route came from companion discovery.
 - `dsh_task`: query or wait for a bounded interval. For an unknown task, perform bounded read-only reconciliation of its original DSH session. Complete, correlated history plus an idle session and empty queues can recover a terminal state and result. A running session or incomplete/conflicting evidence remains unknown. A wait timeout does not cancel the task. Use moderate waits instead of rapid polling.
 - `dsh_cancel`: request a stop. Treat `cancel_requested` as pending until task state confirms termination; cancellation does not roll back file changes.
 
@@ -32,4 +38,4 @@ This version cannot reliably detect whether DSH is waiting for permission or use
 
 ## Acceptance
 
-DSH completion is execution evidence, not acceptance. Read the actual files, inspect the complete diff from `baselineCommit`, and run the checks needed for the stated acceptance criteria. Treat DSH's file list and test report as claims to verify. Report execution state and main-agent acceptance separately, including any unverified limitation.
+DSH completion is execution evidence, not acceptance. Read the actual files, inspect the complete diff from `baselineCommit`, and run the checks needed for the stated acceptance criteria. Treat DSH's file list and test report as claims to verify. For an explicit model selection, distinguish `modelRouting.requested`, `configured`, and `actualRequest`; accept the route only when the actual request evidence exactly matches the requested provider/model/effort. Report execution state and main-agent acceptance separately, including any unverified limitation.
