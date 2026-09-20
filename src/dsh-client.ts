@@ -179,17 +179,27 @@ export class DshClient implements DshApi {
     if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(method)) {
       throw new DshError('INVALID_METHOD', 'Invalid DSH RPC method', false);
     }
-    const cookie = await this.#credentialCookie();
-
-    const rpcId = randomUUID();
     const parameterName = method === 'session/list' ? '_request' : 'request';
+    return await this.#rpc<T>('/api', method, { args: { [parameterName]: request } });
+  }
+
+  async companionRpc<T = unknown>(method: string, request: unknown): Promise<T> {
+    if (!/^[A-Za-z0-9_.-]+$/.test(method)) {
+      throw new DshError('INVALID_METHOD', 'Invalid DSH companion RPC method', false);
+    }
+    return await this.#rpc<T>('/api/codex-session-model', method, request);
+  }
+
+  async #rpc<T>(channel: string, method: string, payload: unknown): Promise<T> {
+    const cookie = await this.#credentialCookie();
+    const rpcId = randomUUID();
     let body: string;
     try {
       body = JSON.stringify({
         type: 'client-request',
         rpcId,
         method,
-        payload: { args: { [parameterName]: request } },
+        payload,
       });
     } catch {
       throw new DshError('INVALID_REQUEST', 'The DSH RPC request is not JSON serializable', false);
@@ -198,7 +208,7 @@ export class DshClient implements DshApi {
     const timeout = setTimeout(() => controller.abort(), this.#config.rpcTimeoutMs);
     timeout.unref?.();
     try {
-      const response = await fetch(new URL(`/api/${method}`, this.origin), {
+      const response = await fetch(new URL(`${channel}/${method}`, this.origin), {
         method: 'POST',
         redirect: 'manual',
         signal: controller.signal,

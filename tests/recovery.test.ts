@@ -52,6 +52,10 @@ class RecoveryDsh implements DshApi {
 
   async probe() { return true; }
 
+  async companionRpc<T = any>(_method: string, _request: any): Promise<T> {
+    throw new Error('unexpected companion RPC during recovery');
+  }
+
   async rpc<T = any>(method: string, _request: any): Promise<T> {
     this.methods.push(method);
     if (method === 'session/cancel') {

@@ -24,15 +24,20 @@ class FakeDsh implements DshApi {
   foreignMessage = false;
   reachable = true;
   statusError?: string;
+  companionMode: 'ok' | 'missing' | 'malformed' | 'unsupported' = 'ok';
+  configuredModel?: { provider: string; model: string; reasoningEffort?: string };
   async probe() { return this.reachable; }
   async rpc<T = any>(method: string, request: any): Promise<T> {
-    if (method === 'session/create') { this.sid = request.sessionId; return { sessionId: this.sid } as T; }
+    if (method === 'session/create') { this.sid = request.sessionId; this.configuredModel = undefined; return { sessionId: this.sid } as T; }
     if (method === 'session/prompt') {
       this.prompts++; this.submissionId = request.requestId;
       if (this.promptError) throw Object.assign(new Error('network failure'), { ambiguous: true });
       this.running = true;
       this.emit('turn/start', { turn: 1 });
       this.emit('user/message', { source: { kind: 'user', rpcId: this.foreignMessage ? 'wrong' : this.submissionId } });
+      if (this.configuredModel !== undefined) {
+        this.emit('request/header', { header: { config: { ...this.configuredModel, temperature: 0.2, maxTokens: 4096 } }, reason: 'initial' });
+      }
       return { accepted: true } as T;
     }
     if (method === 'session/cancel') { this.cancels++; this.running = false; this.emit('turn/end', { turn: 1, reason: { kind: 'aborted' } }); return { accepted: true } as T; }
@@ -41,6 +46,25 @@ class FakeDsh implements DshApi {
       return { items: [{ sessionId: this.sid, running: this.running, projections: { asOfSeq: this.seq - 1, values: { inbox: { 'next-step': [], 'next-turn': this.queued ? ['pending'] : [] } } } }] } as T;
     }
     throw new Error('unexpected RPC');
+  }
+  async companionRpc<T = any>(method: string, request: any): Promise<T> {
+    if (this.companionMode === 'missing') throw Object.assign(new Error('not found'), { code: 'HTTP_ERROR', ambiguous: false });
+    if (this.companionMode === 'malformed') return { unexpected: true } as T;
+    if (method === 'capabilities.get') return {
+      protocol: this.companionMode === 'unsupported' ? 99 : 1,
+      operations: ['capabilities.get', 'selection.set', 'selection.get'],
+      persistence: 'session-log',
+      catalog: {
+        default: { provider: 'fixture-provider', model: 'fixture-model' },
+        routableProviders: ['fixture-provider'],
+        groups: [{ id: 'fixture-provider', name: 'Fixture', models: [{ id: 'fixture-model', name: 'Fixture model', reasoning: { efforts: [{ id: 'high', name: 'High' }] } }] }],
+      },
+    } as T;
+    if (method === 'selection.set') {
+      this.configuredModel = request.selection;
+      return { protocol: 1, sessionId: request.sessionId, persisted: true, selection: request.selection } as T;
+    }
+    throw new Error('unexpected companion RPC');
   }
   async follow(sessionId: string, handlers: FollowHandlers) {
     this.handlers = handlers;
@@ -86,6 +110,15 @@ test('status distinguishes stopped DSH, authentication setup, and ready state', 
   const ready = await manager.status('unused');
   assert.equal(ready.state, 'ready');
   assert.equal(ready.connected, true);
+  const discovered: any = await manager.status('unused', true);
+  assert.equal(discovered.modelRouting.available, true);
+  assert.deepEqual(discovered.modelRouting.catalog.providers[0].models[0], {
+    model: 'fixture-model',
+    name: 'Fixture model',
+    reasoningEfforts: ['high'],
+  });
+  client.companionMode = 'missing';
+  assert.equal((await manager.status('unused', true) as any).modelRouting.code, 'MODEL_ROUTING_COMPANION_MISSING');
 });
 
 test('submit deduplicates and returns correlated final output, excluding a wrong-turn message', async t => {
@@ -99,6 +132,47 @@ test('submit deduplicates and returns correlated final output, excluding a wrong
   const final = await manager.task('test', first.taskId, 1000);
   assert.equal(final.state, 'completed'); assert.equal(final.result, 'verified output');
   await assert.rejects(manager.task('another', first.taskId), /scope/);
+});
+
+test('explicit Session model is configured before prompt and confirmed from its request header', async t => {
+  const { manager, input, client } = await fixture(t);
+  const modelSelection = { provider: 'fixture-provider', model: 'fixture-model', reasoningEffort: 'high' };
+  const task = await manager.submit({ ...input, modelSelection });
+  await tick();
+  assert.equal(client.prompts, 1);
+  client.complete('model routed');
+  const final = await manager.task('test', task.taskId, 1000);
+  assert.equal(final.state, 'completed');
+  assert.deepEqual(final.configuredModel, modelSelection);
+  assert.deepEqual(final.actualModel, modelSelection);
+  assert.equal(typeof final.actualModelSeq, 'number');
+});
+
+test('missing, malformed, or unsupported model-routing capability prevents the first prompt', async t => {
+  const { manager, input, client } = await fixture(t);
+  const modelSelection = { provider: 'fixture-provider', model: 'fixture-model' };
+  for (const [index, mode] of (['missing', 'malformed', 'unsupported'] as const).entries()) {
+    client.companionMode = mode;
+    const task = await manager.submit({ ...input, requestId: `model-failure-${index}`, modelSelection });
+    const final = await manager.task('test', task.taskId, 1000);
+    assert.equal(final.state, 'failed');
+    assert.match(final.guidance ?? '', /No prompt was submitted/);
+  }
+  assert.equal(client.prompts, 0);
+});
+
+test('model selection participates in idempotency and a header mismatch cannot complete', async t => {
+  const { manager, input, client } = await fixture(t);
+  const first = { provider: 'fixture-provider', model: 'fixture-model', reasoningEffort: 'high' };
+  const task = await manager.submit({ ...input, modelSelection: first });
+  await assert.rejects(
+    manager.submit({ ...input, modelSelection: { ...first, reasoningEffort: 'low' } }),
+    /parameters conflict/,
+  );
+  await tick();
+  client.emit('request/header', { header: { config: { provider: 'other', model: 'wrong' } }, reason: 'change' });
+  client.complete('must not pass');
+  assert.equal((await manager.task('test', task.taskId, 1000)).state, 'unknown');
 });
 
 test('bounded wait and aborted wait do not cancel; explicit cancel settles while wait is active', async t => {
@@ -184,6 +258,53 @@ test('shutdown during normalization prevents any reservation or remote dispatch'
   manager.shutdown(); resume();
   await assert.rejects(submission, /closing/);
   assert.equal(store.listOwned(manager.ownerId).length, 0); assert.equal(client.sid, '');
+});
+
+test('shutdown while model capabilities are pending prevents selection and prompt dispatch', async t => {
+  const { manager, input, client, store } = await fixture(t);
+  const modelSelection = { provider: 'fixture-provider', model: 'fixture-model', reasoningEffort: 'high' };
+  const original = client.companionRpc.bind(client);
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  client.companionRpc = async (method, request) => {
+    if (method === 'capabilities.get') {
+      entered();
+      await new Promise<void>(resolve => { release = resolve; });
+    }
+    return original(method, request);
+  };
+  const task = await manager.submit({ ...input, modelSelection });
+  await started;
+  manager.shutdown();
+  release();
+  await tick();
+  assert.equal(client.prompts, 0);
+  assert.equal(client.configuredModel, undefined);
+  assert.equal(store.get(client.origin, input.conversationKey, task.taskId).state, 'unknown');
+});
+
+test('shutdown while model persistence is pending prevents a late prompt or terminal rewrite', async t => {
+  const { manager, input, client, store } = await fixture(t);
+  const modelSelection = { provider: 'fixture-provider', model: 'fixture-model', reasoningEffort: 'high' };
+  const original = client.companionRpc.bind(client);
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  client.companionRpc = async (method, request) => {
+    if (method === 'selection.set') {
+      entered();
+      await new Promise<void>(resolve => { release = resolve; });
+    }
+    return original(method, request);
+  };
+  const task = await manager.submit({ ...input, modelSelection });
+  await started;
+  manager.shutdown();
+  release();
+  await tick();
+  assert.equal(client.prompts, 0);
+  assert.equal(store.get(client.origin, input.conversationKey, task.taskId).state, 'unknown');
 });
 
 test('late workspace validation failure preserves shutdown uncertainty', async t => {

@@ -6,12 +6,44 @@
 
 The repository provides both a Codex marketplace entry and ready-to-run plugin artifacts. Real DSH text tasks, file reads, and changes in isolated worktrees have passed validation. A read-only task invoked directly from a new Codex desktop conversation has also passed. Closing a window and quitting the entire app normally have been tested: DSH can continue running while the plugin initially preserves the task as `unknown`. After reopening Codex, the original `taskId` and `conversationKey` can be passed to `dsh_task` to recover the terminal state and result when complete evidence is available. Crash recovery has not yet been tested.
 
+## Quick start
+
+1. Install the plugin from the GitHub marketplace. The repository ships ready-to-run artifacts, so no clone or npm build is needed:
+
+   ```bash
+   codex plugin marketplace add aototo/codex-subagent-dsh --ref main
+   codex plugin add codex-subagent-dsh@codex-subagent-dsh
+   ```
+
+2. Make sure DSH is running on a loopback address; the default is `http://127.0.0.1:3080`. Multiple Codex conversations share this one instance.
+3. Open a new Codex conversation and say "check the DSH connection status". Follow the `dsh_status` guidance: start DSH if it is not running; if authentication is required, run the returned connect command in your own terminal and paste the DSH startup login URL only into that terminal. Once the state is `ready`, tasks can be delegated.
+4. (Optional) For per-Session model pinning, install the bundled `dsh-companion` directory into the same DSH profile addressed by `DSH_SUBAGENT_URL`, then restart that profile. The companion ships inside the installed plugin root, so point the command at the installed path — no repository clone or build is needed:
+
+   ```bash
+   dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
+   ```
+
+   Replace the example absolute path with the actual installed path. Ask Codex to locate the plugin root from its loaded Skill path; when authentication is required, the connect command returned by `dsh_status` also identifies it (remove `/runtime/connect.mjs`). Replace `web` with your active profile. After upgrading or removing the Codex cache, rebind the companion to an existing path and restart DSH.
+5. To pick a model, ask Codex to call `dsh_status` with `includeModels: true`, copy the exact `provider`, `model`, and optional `reasoningEffort` from the returned catalog, then delegate in natural language, for example:
+
+   > Delegate this clearly bounded task to DSH using deepseek-official/deepseek-v4-flash (effort low); inspect the full diff and accept the result yourself.
+
+6. Route acceptance: `dsh_task` reports `modelRouting.requested`, `configured`, and `actualRequest` observed from the real request/header separately. An explicitly routed task may only complete successfully with an exactly matching actual header; a missing or mismatched header never silently falls back or reports success.
+
 ## Requirements
 
 - Node.js 22.13+ (Node 22 LTS and 24+ are supported)
 - npm
 - DSH running on a local loopback address; the default is `http://127.0.0.1:3080`
 - The login URL generated when DSH starts, required for the first local connection
+
+Optional per-Session model pinning requires the bundled DSH companion in the same DSH profile that Codex addresses. The companion ships inside the plugin root installed from the marketplace, so regular users can point at `<installed-plugin-root>/dsh-companion` directly — no repository clone or npm build is needed. Repository developers may use the in-repo path instead:
+
+```bash
+dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
+```
+
+Restart that profile after installation. The companion never changes DSH's shared default model. The current compatibility gate covers `@deepseek-ai/dsh` 0.1.5-rc.1, its resolved `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 packages, and Cordis 4.0.2. Re-run the isolated host probe for other combinations.
 
 ## Build
 
@@ -88,8 +120,8 @@ The plugin exposes four tools:
 
 | Tool | Purpose |
 | --- | --- |
-| `dsh_status` | Distinguishes between DSH not running, authentication required, and ready, then returns the exact next action. It does not query the state of a specific task. |
-| `dsh_submit` | Submits one clearly bounded task and returns a `taskId`. Repeating the same request does not submit it again. |
+| `dsh_status` | Distinguishes between DSH not running, authentication required, and ready. With `includeModels: true`, it returns a sanitized provider/model/effort catalog from the companion. |
+| `dsh_submit` | Submits one clearly bounded task and returns a `taskId`. Optional `modelSelection` pins an exact route before the Session's first prompt. Repeating the same request does not submit it again. |
 | `dsh_task` | Reads a specific task's state and result, or waits for a bounded period. A wait timeout does not cancel the task. |
 | `dsh_cancel` | Requests cancellation of a specific task. An accepted request is not proof that execution stopped, and existing file changes are not rolled back. |
 
@@ -101,6 +133,10 @@ Multiple Codex conversations share one running DSH instance, while each delegate
 
 Write tasks are supported only in a Git linked worktree whose baseline commit has already been prepared and verified by the main agent. After DSH reports completion, the main agent must still inspect the actual artifacts independently. A cancellation request does not undo changes that have already been made.
 
+To select a model, first call `dsh_status` with `includeModels: true`, then copy the exact `provider`, `model`, and optional `reasoningEffort` identifiers. Do not infer a route from task keywords. A persisted `modelSelection` is immutable for that Session and participates in the idempotency hash. Capability, validation, or durability failure blocks the first prompt. Omitting `modelSelection` preserves the existing default-routing behavior.
+
+`dsh_task` reports `requested`, `configured`, and the `actualRequest` observed from the real `request/header` separately. An explicitly routed task cannot complete successfully without an exact matching header; the bridge never silently falls back.
+
 ## Troubleshooting
 
 - `node` is missing or too old: make sure `node --version` is at least 22.13, then rebuild.
@@ -111,6 +147,8 @@ Write tasks are supported only in a Git linked worktree whose baseline commit ha
 - A task is `unknown`: call `dsh_task` again with the original `taskId` and `conversationKey`. The plugin performs a bounded read of the original session to look for a provable terminal state. It does not create or resubmit the task. If evidence remains insufficient, inspect DSH and the workspace; a write-task reservation is not released early.
 - A cancelled task remains `cancel_requested`: this only proves that the cancellation request was sent. Wait for a confirmed terminal state. Existing file changes are not reverted automatically.
 - Codex cannot find the tools: confirm that the plugin is installed and enabled, and open a new conversation after an update. Then verify the built artifacts and manifest; see `docs/COMPATIBILITY.md`.
+- `MODEL_ROUTING_COMPANION_MISSING`: install the bundled companion into the profile addressed by `DSH_SUBAGENT_URL`, then restart it. Do not substitute `session/selectModel`, which writes the shared default.
+- `MODEL_ROUTING_CAPABILITY_UNSUPPORTED` or a model configuration failure: refresh `dsh_status` with `includeModels: true` and verify the exact provider/model/effort. The bridge does not choose a fallback model.
 
 ## Current limitations
 
@@ -126,7 +164,13 @@ See the [compatibility notes](docs/COMPATIBILITY.md) for versions and reference 
 
 ## Development verification
 
-`npm run check` performs type checking, builds the distributable artifacts, and runs 62 automated tests. The automated integration tests use local HTTP and WebSocket DSH mocks; they do not prove that a real model task completed.
+`npm run check` performs type checking, builds the distributable artifacts, and runs 74 automated tests. The isolated probe below also boots a temporary DSH profile, installs the companion and a synthetic adapter, and proves authentication, two concurrently pinned Sessions, an unaffected default Session, cold-restart recovery, real request headers, and the bundled MCP `dsh_submit`→`dsh_task` path:
+
+```bash
+DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-companion.mjs
+```
+
+The synthetic adapter proves the routing mechanism. It does not prove availability of any external provider or commercial model in the user's configuration.
 
 After the first connection, the following commands submit one constrained task to a real DSH instance:
 

@@ -1,0 +1,3 @@
+- insert:
+    - id: codex-session-model-routing
+      name: '@aototo/codex-subagent-dsh-companion'

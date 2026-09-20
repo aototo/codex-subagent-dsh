@@ -31111,8 +31111,8 @@ function rewriteKeyNames(ctx) {
       bySchema.set(entry.schema, entry);
   }
   const rewrites = /* @__PURE__ */ new Map();
-  for (const record2 of pendingRecords.get(ctx) ?? []) {
-    const seen = ctx.seen.get(record2);
+  for (const record3 of pendingRecords.get(ctx) ?? []) {
+    const seen = ctx.seen.get(record3);
     const names = (seen?.def ?? seen?.schema)?.propertyNames;
     if (!names || names === true || rewrites.has(names))
       continue;
@@ -40380,8 +40380,8 @@ function parseSnapshot(value, sessionId) {
   if (!Number.isSafeInteger(value.cursor) || !Array.isArray(value.records) || typeof value.hasMore !== "boolean") {
     return void 0;
   }
-  for (const record2 of value.records) {
-    if (!isRecord(record2) || record2.type !== "event" || parseWireEvent(record2.event) === void 0) return void 0;
+  for (const record3 of value.records) {
+    if (!isRecord(record3) || record3.type !== "event" || parseWireEvent(record3.event) === void 0) return void 0;
   }
   return value;
 }
@@ -40432,16 +40432,25 @@ var DshClient = class {
     if (!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(method)) {
       throw new DshError("INVALID_METHOD", "Invalid DSH RPC method", false);
     }
+    const parameterName = method === "session/list" ? "_request" : "request";
+    return await this.#rpc("/api", method, { args: { [parameterName]: request } });
+  }
+  async companionRpc(method, request) {
+    if (!/^[A-Za-z0-9_.-]+$/.test(method)) {
+      throw new DshError("INVALID_METHOD", "Invalid DSH companion RPC method", false);
+    }
+    return await this.#rpc("/api/codex-session-model", method, request);
+  }
+  async #rpc(channel, method, payload) {
     const cookie = await this.#credentialCookie();
     const rpcId = randomUUID();
-    const parameterName = method === "session/list" ? "_request" : "request";
     let body;
     try {
       body = JSON.stringify({
         type: "client-request",
         rpcId,
         method,
-        payload: { args: { [parameterName]: request } }
+        payload
       });
     } catch {
       throw new DshError("INVALID_REQUEST", "The DSH RPC request is not JSON serializable", false);
@@ -40450,7 +40459,7 @@ var DshClient = class {
     const timeout = setTimeout(() => controller.abort(), this.#config.rpcTimeoutMs);
     timeout.unref?.();
     try {
-      const response = await fetch(new URL(`/api/${method}`, this.origin), {
+      const response = await fetch(new URL(`${channel}/${method}`, this.origin), {
         method: "POST",
         redirect: "manual",
         signal: controller.signal,
@@ -40718,30 +40727,39 @@ var TaskStore = class {
         error TEXT,
         guidance TEXT,
         end_reason TEXT,
+        configured_model_json TEXT,
+        actual_model_json TEXT,
+        actual_model_seq INTEGER,
         UNIQUE(origin, conversation_key, request_id)
       );
       CREATE INDEX IF NOT EXISTS tasks_owner_id_idx ON tasks(owner_id);
       CREATE INDEX IF NOT EXISTS tasks_state_idx ON tasks(state);
     `);
+    this.#transaction(() => {
+      const columns = new Set(this.#database.prepare("PRAGMA table_info(tasks)").all().map((row) => row.name));
+      if (!columns.has("configured_model_json")) this.#database.exec("ALTER TABLE tasks ADD COLUMN configured_model_json TEXT");
+      if (!columns.has("actual_model_json")) this.#database.exec("ALTER TABLE tasks ADD COLUMN actual_model_json TEXT");
+      if (!columns.has("actual_model_seq")) this.#database.exec("ALTER TABLE tasks ADD COLUMN actual_model_seq INTEGER");
+    });
   }
-  reserve(record2) {
+  reserve(record3) {
     this.#assertOpen();
     const normalizedRecord = {
-      ...record2,
-      cwd: normalizeDirectory(record2.cwd)
+      ...record3,
+      cwd: normalizeDirectory(record3.cwd)
     };
     return this.#transaction(() => {
       const duplicate = this.#database.prepare(
         `SELECT * FROM tasks
            WHERE origin = ? AND conversation_key = ? AND request_id = ?`
-      ).get(record2.origin, record2.conversationKey, record2.requestId);
+      ).get(record3.origin, record3.conversationKey, record3.requestId);
       if (duplicate) {
-        if (duplicate.input_hash !== record2.inputHash) {
+        if (duplicate.input_hash !== record3.inputHash) {
           throw new Error("request parameters conflict");
         }
         return { created: false, task: rowToTask(duplicate) };
       }
-      const taskIdConflict = this.#database.prepare("SELECT 1 FROM tasks WHERE task_id = ?").get(record2.taskId);
+      const taskIdConflict = this.#database.prepare("SELECT 1 FROM tasks WHERE task_id = ?").get(record3.taskId);
       if (taskIdConflict) {
         throw new Error("task id conflict");
       }
@@ -40759,8 +40777,9 @@ var TaskStore = class {
             task_id, request_id, conversation_key, origin, input_hash, input_json,
             cwd, mode, session_id, state, owner_id, owner_pid, created_at,
             updated_at, deadline_at, attempt, turn, last_seq, result, error,
-            guidance, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            guidance, end_reason, configured_model_json, actual_model_json,
+            actual_model_seq
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         normalizedRecord.taskId,
         normalizedRecord.requestId,
@@ -40783,7 +40802,10 @@ var TaskStore = class {
         optionalValue(normalizedRecord.result),
         optionalValue(normalizedRecord.error),
         optionalValue(normalizedRecord.guidance),
-        optionalValue(normalizedRecord.endReason)
+        optionalValue(normalizedRecord.endReason),
+        optionalValue(normalizedRecord.configuredModel === void 0 ? void 0 : JSON.stringify(normalizedRecord.configuredModel)),
+        optionalValue(normalizedRecord.actualModel === void 0 ? void 0 : JSON.stringify(normalizedRecord.actualModel)),
+        optionalValue(normalizedRecord.actualModelSeq)
       );
       return { created: true, task: normalizedRecord };
     });
@@ -40827,6 +40849,9 @@ var TaskStore = class {
       if (patch.error !== void 0) set2("error", patch.error);
       if (patch.guidance !== void 0) set2("guidance", patch.guidance);
       if (patch.endReason !== void 0) set2("end_reason", patch.endReason);
+      if (patch.configuredModel !== void 0) set2("configured_model_json", JSON.stringify(patch.configuredModel));
+      if (patch.actualModel !== void 0) set2("actual_model_json", JSON.stringify(patch.actualModel));
+      if (patch.actualModelSeq !== void 0) set2("actual_model_seq", patch.actualModelSeq);
       set2("updated_at", Math.max(patch.updatedAt ?? Date.now(), currentRow.updated_at + 1));
       values.push(taskId);
       this.#database.prepare(`UPDATE tasks SET ${assignments.join(", ")} WHERE task_id = ?`).run(...values);
@@ -40921,7 +40946,10 @@ function rowToTask(row) {
     ...row.result === null ? {} : { result: row.result },
     ...row.error === null ? {} : { error: row.error },
     ...row.guidance === null ? {} : { guidance: row.guidance },
-    ...row.end_reason === null ? {} : { endReason: row.end_reason }
+    ...row.end_reason === null ? {} : { endReason: row.end_reason },
+    ...row.configured_model_json === null ? {} : { configuredModel: JSON.parse(row.configured_model_json) },
+    ...row.actual_model_json === null ? {} : { actualModel: JSON.parse(row.actual_model_json) },
+    ...row.actual_model_seq === null ? {} : { actualModelSeq: row.actual_model_seq }
   };
 }
 function pidExists(pid) {
@@ -40940,6 +40968,84 @@ import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+
+// src/model-routing.ts
+var MODEL_ROUTING_PROTOCOL = 1;
+function record2(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function identifier(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 256 && !/[\r\n\0]/.test(value);
+}
+function parseModelSelection(value) {
+  if (!record2(value) || !identifier(value.provider) || !identifier(value.model)) return void 0;
+  if (value.reasoningEffort !== void 0 && !identifier(value.reasoningEffort)) return void 0;
+  if (Object.keys(value).some((key2) => !["provider", "model", "reasoningEffort"].includes(key2))) return void 0;
+  return {
+    provider: value.provider,
+    model: value.model,
+    ...value.reasoningEffort === void 0 ? {} : { reasoningEffort: value.reasoningEffort }
+  };
+}
+function sameModelSelection(left, right) {
+  return left.provider === right.provider && left.model === right.model && left.reasoningEffort === right.reasoningEffort;
+}
+function matchesRequestedSelection(actual, requested) {
+  return actual.provider === requested.provider && actual.model === requested.model && (requested.reasoningEffort === void 0 || actual.reasoningEffort === requested.reasoningEffort);
+}
+function modelSelectionFromHeaderEvent(event) {
+  if (event.type !== "request/header") return void 0;
+  const config3 = event.data?.header?.config;
+  if (!record2(config3)) return void 0;
+  return parseModelSelection({
+    provider: config3.provider,
+    model: config3.model,
+    ...config3.reasoningEffort === void 0 ? {} : { reasoningEffort: config3.reasoningEffort }
+  });
+}
+function validateCapabilities(value) {
+  const operations = record2(value) && Array.isArray(value.operations) ? value.operations : void 0;
+  if (!record2(value) || value.protocol !== MODEL_ROUTING_PROTOCOL || value.persistence !== "session-log" || operations === void 0 || !["capabilities.get", "selection.set", "selection.get"].every((operation) => operations.includes(operation))) {
+    throw new Error("DSH model-routing companion returned unsupported capabilities");
+  }
+  return { protocol: MODEL_ROUTING_PROTOCOL, persistence: "session-log" };
+}
+function discoverableModels(value) {
+  validateCapabilities(value);
+  const catalog = record2(value) ? value.catalog : void 0;
+  if (!record2(catalog)) throw new Error("DSH model-routing companion returned an invalid model catalog");
+  const selectedDefault = parseModelSelection(catalog.default);
+  const routable = Array.isArray(catalog.routableProviders) ? catalog.routableProviders.filter(identifier) : void 0;
+  if (selectedDefault === void 0 || routable === void 0 || routable.length > 100 || !Array.isArray(catalog.groups)) {
+    throw new Error("DSH model-routing companion returned an invalid model catalog");
+  }
+  const providers = catalog.groups.flatMap((group) => {
+    if (!record2(group) || !identifier(group.id) || !routable.includes(group.id) || !Array.isArray(group.models)) return [];
+    const name = identifier(group.name) ? group.name : group.id;
+    const models = group.models.slice(0, 500).flatMap((model) => {
+      if (!record2(model) || !identifier(model.id)) return [];
+      const reasoning = record2(model.reasoning) && Array.isArray(model.reasoning.efforts) ? model.reasoning.efforts : [];
+      return [{
+        model: model.id,
+        name: identifier(model.name) ? model.name : model.id,
+        reasoningEfforts: reasoning.flatMap((effort) => record2(effort) && identifier(effort.id) ? [effort.id] : []).slice(0, 100)
+      }];
+    });
+    return [{ provider: group.id, name, models }];
+  }).slice(0, 100);
+  if (providers.length === 0) throw new Error("DSH model-routing companion returned an empty model catalog");
+  return { default: selectedDefault, providers };
+}
+function validateSetResponse(value, expectedSessionId, expected) {
+  if (!record2(value) || value.protocol !== MODEL_ROUTING_PROTOCOL || value.sessionId !== expectedSessionId || value.persisted !== true) {
+    throw new Error("DSH model-routing companion returned an invalid selection receipt");
+  }
+  const selected = parseModelSelection(value.selection);
+  if (selected === void 0 || !sameModelSelection(selected, expected)) {
+    throw new Error("DSH model-routing companion did not confirm the exact selection");
+  }
+  return selected;
+}
 
 // src/reconcile.ts
 var RECOVERY_MAX_RESULT_CHARS = 64 * 1024;
@@ -40966,10 +41072,13 @@ function inspectRecoveryHistory(task, snapshot) {
   let promptSeq;
   let result;
   let terminal2;
+  let actualModel;
+  let actualModelSeq;
+  const requestedModel = task.input?.modelSelection;
   for (let index = 0; index < snapshot.records.length; index++) {
-    const record2 = snapshot.records[index];
-    const event = record2?.event;
-    if (record2?.type !== "event" || event?.seq !== index) return invalid("RECOVERY_HISTORY_GAPPED");
+    const record3 = snapshot.records[index];
+    const event = record3?.event;
+    if (record3?.type !== "event" || event?.seq !== index) return invalid("RECOVERY_HISTORY_GAPPED");
     if (event.type === "turn/start") {
       if (turn !== void 0 || terminal2 !== void 0 || !Number.isSafeInteger(event.data?.turn)) {
         return invalid("RECOVERY_FOREIGN_TURN");
@@ -40994,6 +41103,20 @@ function inspectRecoveryHistory(task, snapshot) {
       result = text;
       continue;
     }
+    if (event.type === "request/header") {
+      if (requestedModel === void 0) continue;
+      if (turn === void 0 || promptSeq === void 0 || terminal2 !== void 0) {
+        return invalid("RECOVERY_MODEL_HEADER_UNCORRELATED");
+      }
+      const observed = modelSelectionFromHeaderEvent(event);
+      if (observed === void 0) return invalid("RECOVERY_MODEL_HEADER_INVALID");
+      if (!matchesRequestedSelection(observed, requestedModel)) {
+        return invalid("RECOVERY_MODEL_ROUTE_MISMATCH");
+      }
+      actualModel = observed;
+      actualModelSeq = event.seq;
+      continue;
+    }
     if (/^(?:tool|command|exec)(?:\/|\b)/.test(event.type)) {
       result = void 0;
       continue;
@@ -41010,10 +41133,28 @@ function inspectRecoveryHistory(task, snapshot) {
   }
   const reason = terminal2.data?.reason?.kind;
   if (reason === "completed") {
+    if (requestedModel !== void 0 && actualModel === void 0) {
+      return invalid("RECOVERY_MODEL_ROUTE_NOT_OBSERVED");
+    }
     if (result === void 0) return invalid("RECOVERY_NO_VERIFIABLE_RESULT");
-    return { ok: true, turn, terminalSeq: terminal2.seq, reason, result };
+    return {
+      ok: true,
+      turn,
+      terminalSeq: terminal2.seq,
+      reason,
+      result,
+      ...actualModel === void 0 ? {} : { actualModel, actualModelSeq }
+    };
   }
-  if (reason === "aborted") return { ok: true, turn, terminalSeq: terminal2.seq, reason };
+  if (reason === "aborted") {
+    return {
+      ok: true,
+      turn,
+      terminalSeq: terminal2.seq,
+      reason,
+      ...actualModel === void 0 ? {} : { actualModel, actualModelSeq }
+    };
+  }
   return invalid("RECOVERY_TERMINAL_NOT_RESTORABLE");
 }
 
@@ -41048,7 +41189,7 @@ var TaskManager = class {
   cancelChecks = /* @__PURE__ */ new Set();
   recoveries = /* @__PURE__ */ new Map();
   closed = false;
-  async status(connectCommand2) {
+  async status(connectCommand2, includeModels = false) {
     const base = { origin: this.client.origin, tools: ["dsh_status", "dsh_submit", "dsh_task", "dsh_cancel"] };
     if (!await this.client.probe()) {
       return {
@@ -41079,7 +41220,31 @@ var TaskManager = class {
       }
       throw error62;
     }
-    return { ...base, connected: true, dshRunning: true, state: "ready", taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: "conversationKey is logical grouping, not authentication", permissionHandling: "Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits." };
+    const ready = { ...base, connected: true, dshRunning: true, state: "ready", taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: "conversationKey is logical grouping, not authentication", permissionHandling: "Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits." };
+    if (!includeModels) return ready;
+    try {
+      const capabilities = await this.client.companionRpc("capabilities.get", {});
+      return {
+        ...ready,
+        modelRouting: {
+          available: true,
+          protocol: 1,
+          persistence: "session-log",
+          catalog: discoverableModels(capabilities)
+        }
+      };
+    } catch (error62) {
+      const remoteCode = safeError(error62);
+      const missing = remoteCode === "HTTP_ERROR";
+      return {
+        ...ready,
+        modelRouting: {
+          available: false,
+          code: missing ? "MODEL_ROUTING_COMPANION_MISSING" : "MODEL_ROUTING_CAPABILITY_UNSUPPORTED",
+          guidance: missing ? "Install and enable the bundled DSH companion in this DSH profile to use modelSelection." : "The enabled DSH companion did not return a supported, sanitized model catalog."
+        }
+      };
+    }
   }
   async normalize(input2) {
     const cwd = await realpath(input2.cwd);
@@ -41090,6 +41255,9 @@ var TaskManager = class {
     if (input2.mode === "write") {
       if (!input2.baselineCommit || !/^[a-f0-9]{40}$/i.test(input2.baselineCommit)) throw new Error("write tasks require a full baselineCommit");
       if (!input2.allowedPaths?.length) throw new Error("write tasks require allowedPaths");
+    }
+    if (input2.modelSelection !== void 0 && parseModelSelection(input2.modelSelection) === void 0) {
+      throw new Error("modelSelection requires non-empty provider/model and an optional non-empty reasoningEffort");
     }
     return { ...input2, cwd };
   }
@@ -41111,14 +41279,14 @@ var TaskManager = class {
     const input2 = await this.normalize(raw);
     if (this.closed) throw new Error("Task manager is closing");
     const now = Date.now();
-    const record2 = { taskId: randomUUID2(), requestId: input2.requestId, conversationKey: input2.conversationKey, origin: this.client.origin, inputHash: createHash2("sha256").update(stable(input2)).digest("hex"), input: input2, cwd: input2.cwd, sessionId: "session-" + randomUUID2(), state: "queued", ownerId: this.ownerId, ownerPid: process.pid, createdAt: now, updatedAt: now, deadlineAt: now + this.config.taskTimeoutMs, attempt: 1 };
-    const reserved = this.store.reserve(record2);
+    const record3 = { taskId: randomUUID2(), requestId: input2.requestId, conversationKey: input2.conversationKey, origin: this.client.origin, inputHash: createHash2("sha256").update(stable(input2)).digest("hex"), input: input2, cwd: input2.cwd, sessionId: "session-" + randomUUID2(), state: "queued", ownerId: this.ownerId, ownerPid: process.pid, createdAt: now, updatedAt: now, deadlineAt: now + this.config.taskTimeoutMs, attempt: 1 };
+    const reserved = this.store.reserve(record3);
     if (!reserved.created) return reserved.task;
     const run = { task: reserved.task, submitted: false, seenPrompt: false, lastSeq: -1, result: "", finishing: false };
-    this.active.set(record2.taskId, run);
+    this.active.set(record3.taskId, run);
     run.timer = setTimeout(() => {
-      void this.cancel(record2.conversationKey, record2.taskId).catch(() => this.uncertain(run, "TIMEOUT_CANCEL_FAILED"));
-    }, Math.max(1, record2.deadlineAt - Date.now()));
+      void this.cancel(record3.conversationKey, record3.taskId).catch(() => this.uncertain(run, "TIMEOUT_CANCEL_FAILED"));
+    }, Math.max(1, record3.deadlineAt - Date.now()));
     void this.dispatch(run);
     return reserved.task;
   }
@@ -41166,6 +41334,35 @@ var TaskManager = class {
       if (created.sessionId !== run.task.sessionId) {
         this.uncertain(run, "SESSION_ID_MISMATCH");
         return;
+      }
+      if (!this.mayDispatch(run)) return;
+      if (run.task.input.modelSelection !== void 0) {
+        try {
+          validateCapabilities(await this.client.companionRpc("capabilities.get", {}));
+          if (!this.active.has(run.task.taskId) || !this.mayDispatch(run)) return;
+          const receipt = await this.client.companionRpc("selection.set", {
+            sessionId: run.task.sessionId,
+            selection: run.task.input.modelSelection
+          });
+          if (!this.active.has(run.task.taskId) || !this.mayDispatch(run)) return;
+          const configuredModel = validateSetResponse(receipt, run.task.sessionId, run.task.input.modelSelection);
+          this.update(run, { configuredModel });
+        } catch (error62) {
+          if (!this.active.has(run.task.taskId)) return;
+          const current = this.current(run);
+          if (current.state !== "queued") {
+            this.mayDispatch(run);
+            return;
+          }
+          const remoteCode = safeError(error62);
+          this.store.update(run.task.taskId, {
+            state: "failed",
+            error: remoteCode === "DSH_REQUEST_FAILED" ? "MODEL_ROUTING_RESPONSE_INVALID" : remoteCode,
+            guidance: remoteCode === "HTTP_ERROR" ? "Install and enable the bundled DSH companion in the addressed DSH profile. No prompt was submitted." : "The requested Session model was not durably confirmed. Check companion capabilities and the exact provider/model/effort. No prompt was submitted."
+          }, ["queued"]);
+          this.cleanup(run);
+          return;
+        }
       }
       if (!this.mayDispatch(run)) return;
       const sub = await this.client.follow(run.task.sessionId, {
@@ -41227,7 +41424,17 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
       return;
     }
     const d = event.data;
-    if (event.type === "turn/start") {
+    if (event.type === "request/header") {
+      const actualModel = modelSelectionFromHeaderEvent(event);
+      const requested = run.task.input.modelSelection;
+      if (requested === void 0) return;
+      if (!run.seenPrompt || run.turn === void 0 || actualModel === void 0 || !matchesRequestedSelection(actualModel, requested)) {
+        void this.client.rpc("session/cancel", { sessionId: run.task.sessionId }).catch(() => void 0);
+        this.uncertain(run, "MODEL_ROUTE_MISMATCH");
+        return;
+      }
+      this.update(run, { actualModel, actualModelSeq: event.seq, lastSeq: event.seq });
+    } else if (event.type === "turn/start") {
       if (!run.submitted || run.turn !== void 0 && run.turn !== d.turn) {
         this.uncertain(run, "UNEXPECTED_TURN");
         return;
@@ -41281,6 +41488,11 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
         return;
       }
       if (!this.active.has(run.task.taskId)) return;
+      const latest = this.current(run);
+      if (reason === "completed" && latest.input.modelSelection !== void 0 && latest.actualModel === void 0) {
+        this.uncertain(run, "MODEL_ROUTE_NOT_OBSERVED");
+        return;
+      }
       if (reason === "completed" && run.seenPrompt && run.result) this.update(run, { state: "completed", result: run.result, lastSeq: seq, endReason: reason, guidance: "Execution ended. Codex must independently verify artifacts and acceptance criteria." });
       else if (reason === "aborted" && this.current(run).endReason === "cancellation_requested") this.update(run, { state: "cancelled", lastSeq: seq, endReason: reason, guidance: "DSH termination and empty queue confirmed. Cancellation does not roll back file changes." });
       else if (reason === "completed") this.update(run, { state: "failed", lastSeq: seq, endReason: reason, error: "NO_VERIFIABLE_RESULT" });
@@ -41389,6 +41601,7 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
             turn: history.turn,
             lastSeq: history.terminalSeq,
             result: history.result,
+            ...history.actualModel === void 0 ? {} : { actualModel: history.actualModel, actualModelSeq: history.actualModelSeq },
             error: null,
             endReason: history.reason,
             guidance: "Recovered from the complete original DSH history. Codex must independently verify artifacts and acceptance criteria."
@@ -41491,14 +41704,25 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
 var config2 = loadConfig();
 var store = new TaskStore(config2.stateDir);
 var manager = new TaskManager(config2, new DshClient(config2), store);
-var server = new McpServer({ name: "codex-subagent-dsh", version: "0.1.1" });
+var server = new McpServer({ name: "codex-subagent-dsh", version: "0.2.0" });
 var connectCommand = `node ${JSON.stringify(fileURLToPath(new URL("./connect.mjs", import.meta.url)))}`;
 var key = external_exports.string().min(1).max(128);
 var scope = { conversationKey: key, taskId: external_exports.string().uuid() };
 var content = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
 function view(task) {
-  const { inputHash, ownerId, ownerPid, input: input2, ...publicTask } = task;
-  return { ...publicTask, mode: input2.mode, baselineCommit: input2.baselineCommit, acceptance: "not_assessed_by_plugin" };
+  const { inputHash, ownerId, ownerPid, input: input2, configuredModel, actualModel, actualModelSeq, ...publicTask } = task;
+  return {
+    ...publicTask,
+    mode: input2.mode,
+    baselineCommit: input2.baselineCommit,
+    modelRouting: input2.modelSelection === void 0 ? void 0 : {
+      requested: input2.modelSelection,
+      configured: configuredModel,
+      actualRequest: actualModel,
+      actualRequestHeaderSeq: actualModelSeq
+    },
+    acceptance: "not_assessed_by_plugin"
+  };
 }
 async function guarded(work) {
   try {
@@ -41509,10 +41733,10 @@ async function guarded(work) {
     return { ...content({ error: typeof code === "string" ? code : "REQUEST_FAILED", message: message.slice(0, 400), guidance: "For authentication errors run the local connect command. Do not paste login links or credentials into chat." }), isError: true };
   }
 }
-server.registerTool("dsh_status", { description: "Check whether local DSH is running and authenticated without creating a task. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.", inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, () => guarded(() => manager.status(connectCommand)));
+server.registerTool("dsh_status", { description: "Check whether local DSH is running and authenticated without creating a task. Set includeModels to discover sanitized provider/model/effort routes from the optional companion. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.", inputSchema: { includeModels: external_exports.boolean().default(false) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input2) => guarded(() => manager.status(connectCommand, input2.includeModels)));
 server.registerTool("dsh_submit", {
-  description: "Delegate one bounded task to a new local DSH session. Use a stable conversationKey and requestId; duplicates do not resubmit. Main agent retains final acceptance. Write mode requires a clean, separate Git linked worktree and its HEAD baseline. Read mode is a task instruction, not a sandbox.",
-  inputSchema: { conversationKey: key, requestId: key, goal: external_exports.string().min(1).max(16e3), context: external_exports.string().max(32e3).optional(), cwd: external_exports.string().min(1).max(4096), mode: external_exports.enum(["read", "write"]), allowedPaths: external_exports.array(external_exports.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: external_exports.array(external_exports.string().min(1).max(2e3)).min(1).max(30), baselineCommit: external_exports.string().regex(/^[a-fA-F0-9]{40}$/).optional() },
+  description: "Delegate one bounded task to a new local DSH session. Use a stable conversationKey and requestId; duplicates do not resubmit. Optional modelSelection pins one exact provider/model/effort to this Session before its first prompt and requires the DSH companion. Main agent retains final acceptance. Write mode requires a clean, separate Git linked worktree and its HEAD baseline. Read mode is a task instruction, not a sandbox.",
+  inputSchema: { conversationKey: key, requestId: key, goal: external_exports.string().min(1).max(16e3), context: external_exports.string().max(32e3).optional(), cwd: external_exports.string().min(1).max(4096), mode: external_exports.enum(["read", "write"]), allowedPaths: external_exports.array(external_exports.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: external_exports.array(external_exports.string().min(1).max(2e3)).min(1).max(30), baselineCommit: external_exports.string().regex(/^[a-fA-F0-9]{40}$/).optional(), modelSelection: external_exports.object({ provider: external_exports.string().min(1).max(256), model: external_exports.string().min(1).max(256), reasoningEffort: external_exports.string().min(1).max(256).optional() }).strict().optional() },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
 }, (input2) => guarded(async () => view(await manager.submit(input2))));
 server.registerTool("dsh_task", { description: "Read or boundedly wait for a scoped DSH task; waitMs is at most 20 seconds. Unknown tasks receive a bounded read-only check of the original session for a provable terminal state/result. Running or incomplete evidence stays unknown and retains workspace reservations. Never auto-resubmit; verify results independently.", inputSchema: { ...scope, waitMs: external_exports.number().int().min(0).max(config2.maxWaitMs).default(0) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input2, extra) => guarded(async () => view(await manager.task(input2.conversationKey, input2.taskId, input2.waitMs, extra.signal))));

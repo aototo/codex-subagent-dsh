@@ -1,0 +1,3 @@
+- insert:
+    - id: codex-session-model-fake-adapter
+      name: '@aototo/codex-subagent-dsh-fake-adapter'

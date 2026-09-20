@@ -31,6 +31,9 @@ interface TaskRow {
   error: string | null;
   guidance: string | null;
   end_reason: string | null;
+  configured_model_json: string | null;
+  actual_model_json: string | null;
+  actual_model_seq: number | null;
 }
 
 export interface ReserveResult {
@@ -52,6 +55,9 @@ type StoredTaskPatch = Partial<
     | 'error'
     | 'guidance'
     | 'endReason'
+    | 'configuredModel'
+    | 'actualModel'
+    | 'actualModelSeq'
   >
 >;
 
@@ -102,11 +108,20 @@ export class TaskStore {
         error TEXT,
         guidance TEXT,
         end_reason TEXT,
+        configured_model_json TEXT,
+        actual_model_json TEXT,
+        actual_model_seq INTEGER,
         UNIQUE(origin, conversation_key, request_id)
       );
       CREATE INDEX IF NOT EXISTS tasks_owner_id_idx ON tasks(owner_id);
       CREATE INDEX IF NOT EXISTS tasks_state_idx ON tasks(state);
     `);
+    this.#transaction(() => {
+      const columns = new Set((this.#database.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>).map(row => row.name));
+      if (!columns.has('configured_model_json')) this.#database.exec('ALTER TABLE tasks ADD COLUMN configured_model_json TEXT');
+      if (!columns.has('actual_model_json')) this.#database.exec('ALTER TABLE tasks ADD COLUMN actual_model_json TEXT');
+      if (!columns.has('actual_model_seq')) this.#database.exec('ALTER TABLE tasks ADD COLUMN actual_model_seq INTEGER');
+    });
   }
 
   reserve(record: TaskRecord): ReserveResult {
@@ -160,8 +175,9 @@ export class TaskStore {
             task_id, request_id, conversation_key, origin, input_hash, input_json,
             cwd, mode, session_id, state, owner_id, owner_pid, created_at,
             updated_at, deadline_at, attempt, turn, last_seq, result, error,
-            guidance, end_reason
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            guidance, end_reason, configured_model_json, actual_model_json,
+            actual_model_seq
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           normalizedRecord.taskId,
@@ -186,6 +202,9 @@ export class TaskStore {
           optionalValue(normalizedRecord.error),
           optionalValue(normalizedRecord.guidance),
           optionalValue(normalizedRecord.endReason),
+          optionalValue(normalizedRecord.configuredModel === undefined ? undefined : JSON.stringify(normalizedRecord.configuredModel)),
+          optionalValue(normalizedRecord.actualModel === undefined ? undefined : JSON.stringify(normalizedRecord.actualModel)),
+          optionalValue(normalizedRecord.actualModelSeq),
         );
 
       return { created: true, task: normalizedRecord };
@@ -257,6 +276,9 @@ export class TaskStore {
       if (patch.error !== undefined) set('error', patch.error);
       if (patch.guidance !== undefined) set('guidance', patch.guidance);
       if (patch.endReason !== undefined) set('end_reason', patch.endReason);
+      if (patch.configuredModel !== undefined) set('configured_model_json', JSON.stringify(patch.configuredModel));
+      if (patch.actualModel !== undefined) set('actual_model_json', JSON.stringify(patch.actualModel));
+      if (patch.actualModelSeq !== undefined) set('actual_model_seq', patch.actualModelSeq);
       set('updated_at', Math.max(patch.updatedAt ?? Date.now(), currentRow.updated_at + 1));
 
       values.push(taskId);
@@ -375,6 +397,9 @@ function rowToTask(row: TaskRow): TaskRecord {
     ...(row.error === null ? {} : { error: row.error }),
     ...(row.guidance === null ? {} : { guidance: row.guidance }),
     ...(row.end_reason === null ? {} : { endReason: row.end_reason }),
+    ...(row.configured_model_json === null ? {} : { configuredModel: JSON.parse(row.configured_model_json) }),
+    ...(row.actual_model_json === null ? {} : { actualModel: JSON.parse(row.actual_model_json) }),
+    ...(row.actual_model_seq === null ? {} : { actualModelSeq: row.actual_model_seq }),
   };
 }
 

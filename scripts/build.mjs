@@ -7,6 +7,7 @@ import { build } from 'esbuild';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outdir = path.join(repoRoot, 'plugins', 'codex-subagent-dsh', 'runtime');
+const companionOutdir = path.join(repoRoot, 'plugins', 'codex-subagent-dsh', 'dsh-companion');
 const externals = [...new Set(
   builtinModules.flatMap((name) => {
     const bareName = name.replace(/^node:/, '');
@@ -15,6 +16,7 @@ const externals = [...new Set(
 )];
 
 await mkdir(outdir, { recursive: true });
+await mkdir(companionOutdir, { recursive: true });
 
 const result = await build({
   absWorkingDir: repoRoot,
@@ -37,6 +39,22 @@ const result = await build({
   legalComments: 'eof',
   sourcemap: false,
   metafile: true,
+  logLevel: 'info',
+});
+
+await build({
+  absWorkingDir: repoRoot,
+  entryPoints: { index: 'src/dsh-companion.ts' },
+  outdir: companionOutdir,
+  outExtension: { '.js': '.mjs' },
+  entryNames: '[name]',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: ['node22.13'],
+  external: ['@deepseek-ai/*', ...externals],
+  legalComments: 'eof',
+  sourcemap: false,
   logLevel: 'info',
 });
 

@@ -41,6 +41,17 @@
 
 凭证失效时必须重新连接。插件不读取浏览器 Cookie或服务端签名密钥，不自动重启 DSH，也不会自动重发结果未知的任务。
 
+可选的 Session 模型固定需要同仓库的 DSH companion。当前兼容性门禁覆盖顶层
+`@deepseek-ai/dsh@0.1.5-rc.1`、实际解析到的 `dsh-agent`、
+`dsh-api-session-controller`、`dsh-client-connection` 0.1.5-rc.2 和 Cordis
+4.0.2。companion 在现有 `/api` carrier 下注册
+`/api/codex-session-model/<operation>` 精确 Fetch 路由，因此继续复用 Host、Origin
+和浏览器 Cookie 鉴权，不创建旁路凭证。固定配置通过带
+`codexSessionModelRouting` 命名空间标记的官方 `model/selection` Session 事件持久化，
+并在返回成功前等待 Session flush；普通 UI 模型选择不会被当成 bridge 所有的固定配置。
+它只覆写目标 Agent 的 prompt assembly 和 request，不调用会保存共享默认值的
+`session/selectModel`。
+
 ## 官方参考
 
 只读检查的上游为 [`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness)：
@@ -54,6 +65,7 @@
 
 ## 尚未验证
 
+- 0.2.0 尚未发布到 GitHub marketplace；此前 Git 来源验证属于 0.1.1。0.2.0 的桌面新对话工具发现与显式模型委派为用户报告，维护者尚未独立复现；GitHub 全新安装、更新、卸载和其他用户环境仍待验证
 - GitHub marketplace 已在隔离 Codex 配置中完成首次安装；Git 来源的更新、卸载和其他用户环境仍待验证
 - 新桌面对话中的取消、权限/输入等待等交互（直接调用插件的只读任务已通过；真实文本、读取与 CLI 派发的写任务也已通过）
 - 崩溃时的运行中任务行为；正常关闭窗口及整个应用退出并重开的边界已验证：MCP 退出、插件任务 unknown、DSH 继续执行。跨进程取消与按需恢复的公开结果见[验证记录](VERIFICATION.md)
@@ -66,4 +78,17 @@
 
 按需恢复不等于后台接管。原任务仍运行、快照被截断、事件不连续、请求或回合不匹配、队列非空、投影落后时仍保留 unknown。当前只恢复 completed（有有效结果）与有取消意图的 aborted→cancelled；其他结束原因保守保留 unknown。
 
-恢复增量的本地验证快照版本为 `0.1.0+codex.20260919062647`；公开清单当前版本为 `0.1.1`。类型检查与 62 项自动化测试通过；插件清单和技能校验通过。`dsh_status` 已增加未启动、待认证和就绪三态诊断，待认证时返回实际安装路径对应的连接命令。已有对话的 MCP 可能仍运行旧快照，使用新对话加载更新版本。
+恢复增量的本地验证快照版本为 `0.1.0+codex.20260919062647`；该阶段公开清单版本为 `0.1.1`。当前仓库清单和 companion 包版本已统一为 `0.2.0`，加入可选 Session 模型固定和模型目录发现。类型检查、构建与 74 项自动化测试通过；插件清单和技能校验结果见[验证记录](VERIFICATION.md)。`dsh_status` 保留未启动、待认证和就绪三态诊断，待认证时返回实际安装路径对应的连接命令；`includeModels: true` 只在就绪后请求净化后的 companion 目录。已有对话的 MCP 可能仍运行旧快照，使用新对话加载更新版本。
+
+## Session 模型固定的隔离主机门禁
+
+仓库中的 `probe-session-model-hooks.mjs` 使用 DSH 导出的
+`installModelSelection` 和真实 Cordis hook 验证 prompt assembly/request 优先级。
+`probe-dsh-companion.mjs` 使用临时 `DSH_HOME`、随机端口、隔离 profile 和合成 adapter，
+验证未认证请求返回 401、A/B 两个 Session 并发固定不同模型与 effort、冷重启恢复、
+未固定 Session C 继续使用隔离 profile 的第三个默认模型、所有实际请求 header 精确匹配，
+且共享默认值在请求前后不变。相同探针还通过打包后的 MCP runtime 完成一次
+`dsh_submit(modelSelection)`，并核对 requested/configured/actualRequest 三份证据。
+
+探针中的模型和 adapter 都是测试夹具。它证明 host API、鉴权、持久化、hook、事件顺序
+和 bridge envelope 的组合行为，不证明任何外部 provider 或生产模型当前可用。

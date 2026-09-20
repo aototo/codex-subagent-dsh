@@ -1,10 +1,11 @@
-import type { SessionSnapshot, TaskRecord, WireEvent } from './types.js';
+import { matchesRequestedSelection, modelSelectionFromHeaderEvent } from './model-routing.js';
+import type { ModelSelection, SessionSnapshot, TaskRecord, WireEvent } from './types.js';
 
 export const RECOVERY_MAX_RESULT_CHARS = 64 * 1024;
 
 export type RecoveryHistory =
-  | { ok: true; turn: number; terminalSeq: number; reason: 'completed'; result: string }
-  | { ok: true; turn: number; terminalSeq: number; reason: 'aborted' }
+  | { ok: true; turn: number; terminalSeq: number; reason: 'completed'; result: string; actualModel?: ModelSelection; actualModelSeq?: number }
+  | { ok: true; turn: number; terminalSeq: number; reason: 'aborted'; actualModel?: ModelSelection; actualModelSeq?: number }
   | { ok: false; error: string };
 
 const invalid = (error: string): RecoveryHistory => ({ ok: false, error });
@@ -40,6 +41,9 @@ export function inspectRecoveryHistory(task: TaskRecord, snapshot: SessionSnapsh
   let promptSeq: number | undefined;
   let result: string | undefined;
   let terminal: WireEvent | undefined;
+  let actualModel: ModelSelection | undefined;
+  let actualModelSeq: number | undefined;
+  const requestedModel = task.input?.modelSelection;
 
   for (let index = 0; index < snapshot.records.length; index++) {
     const record = snapshot.records[index];
@@ -75,6 +79,23 @@ export function inspectRecoveryHistory(task: TaskRecord, snapshot: SessionSnapsh
       continue;
     }
 
+    if (event.type === 'request/header') {
+      // Legacy tasks did not request a model pin and remain compatible with
+      // older or provider-specific request/header shapes.
+      if (requestedModel === undefined) continue;
+      if (turn === undefined || promptSeq === undefined || terminal !== undefined) {
+        return invalid('RECOVERY_MODEL_HEADER_UNCORRELATED');
+      }
+      const observed = modelSelectionFromHeaderEvent(event);
+      if (observed === undefined) return invalid('RECOVERY_MODEL_HEADER_INVALID');
+      if (!matchesRequestedSelection(observed, requestedModel)) {
+        return invalid('RECOVERY_MODEL_ROUTE_MISMATCH');
+      }
+      actualModel = observed;
+      actualModelSeq = event.seq;
+      continue;
+    }
+
     if (/^(?:tool|command|exec)(?:\/|\b)/.test(event.type)) {
       // An interim answer is not the final result if execution followed it.
       result = undefined;
@@ -100,9 +121,27 @@ export function inspectRecoveryHistory(task: TaskRecord, snapshot: SessionSnapsh
   }
   const reason = terminal.data?.reason?.kind;
   if (reason === 'completed') {
+    if (requestedModel !== undefined && actualModel === undefined) {
+      return invalid('RECOVERY_MODEL_ROUTE_NOT_OBSERVED');
+    }
     if (result === undefined) return invalid('RECOVERY_NO_VERIFIABLE_RESULT');
-    return { ok: true, turn, terminalSeq: terminal.seq, reason, result };
+    return {
+      ok: true,
+      turn,
+      terminalSeq: terminal.seq,
+      reason,
+      result,
+      ...(actualModel === undefined ? {} : { actualModel, actualModelSeq })
+    };
   }
-  if (reason === 'aborted') return { ok: true, turn, terminalSeq: terminal.seq, reason };
+  if (reason === 'aborted') {
+    return {
+      ok: true,
+      turn,
+      terminalSeq: terminal.seq,
+      reason,
+      ...(actualModel === undefined ? {} : { actualModel, actualModelSeq })
+    };
+  }
   return invalid('RECOVERY_TERMINAL_NOT_RESTORABLE');
 }

@@ -6,12 +6,44 @@
 
 仓库同时提供 Codex marketplace 入口和可直接运行的插件产物。真实 DSH 文本、文件读取和隔离 worktree 修改均已通过；新桌面对话直接调用插件的只读任务也已通过。关闭窗口和整个应用正常退出均已验证：DSH 可继续执行，插件先保留 unknown。重开后可用原 taskId 和 conversationKey 调用 dsh_task，按完整证据恢复终态与结果；崩溃场景仍待验证。
 
+## 快速开始
+
+1. 从 GitHub marketplace 安装插件（仓库已提交可运行产物，不需要克隆或 npm 构建）：
+
+   ```bash
+   codex plugin marketplace add aototo/codex-subagent-dsh --ref main
+   codex plugin add codex-subagent-dsh@codex-subagent-dsh
+   ```
+
+2. 确认本机 DSH 已在回环地址运行；默认地址为 `http://127.0.0.1:3080`，多个 Codex 对话共用这一个实例。
+3. 开启新 Codex 对话，直接说"检查 DSH 连接状态"，按 `dsh_status` 返回的指引完成首次连接：DSH 未启动先启动；待认证时在本地终端运行返回的完整连接命令，并只在终端里输入 DSH 启动登录链接；状态为 `ready` 后即可委派。
+4. （可选）需要 Session 级模型固定时，把随插件一起安装的 `dsh-companion` 目录装进 `DSH_SUBAGENT_URL` 指向的同一 DSH profile 并重启。companion 就在实际安装好的插件根目录下，直接用已安装路径即可，无需克隆仓库或构建：
+
+   ```bash
+   dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
+   ```
+
+   将示例绝对路径替换为实际安装路径。可以让 Codex 根据已加载的插件 Skill 路径定位插件根目录；待认证时，也可从 `dsh_status` 返回的连接命令中去掉末尾 `/runtime/connect.mjs` 得到该目录。`web` 请替换为实际使用的 profile。升级或移除 Codex 缓存后，应重新绑定仍存在的 companion 路径并重启 DSH。
+5. 需要指定模型时，先让 Codex 用 `includeModels: true` 调用 `dsh_status`，从返回目录复制精确的 `provider`、`model` 和可选 `reasoningEffort`，然后用自然语言委派，例如：
+
+   > 把这个边界明确的任务交给 DSH，使用 deepseek-official/deepseek-v4-flash（effort low）；你负责检查完整 diff 和验收。
+
+6. 路由验收：`dsh_task` 分别返回 `modelRouting.requested`、`configured` 和由真实 request/header 观察到的 `actualRequest`。显式指定模型的 completed 任务必须有精确匹配的实际 header；缺失或不匹配不会静默回退、不会报告成功。
+
 ## 环境
 
 - Node.js 22.13+（支持 22 LTS 和 24+）
 - npm
 - 已在本机回环地址启动的 DSH；默认地址为 `http://127.0.0.1:3080`
 - DSH 启动时生成的登录链接，用于首次本地连接
+
+可选的 Session 模型固定需要把随插件分发的 DSH companion 安装到 Codex 实际连接的同一个 DSH profile。companion 目录已包含在 marketplace 安装的插件根目录中，普通使用者直接指向已安装插件根目录下的 `dsh-companion` 即可，不需要克隆仓库或运行 npm 构建；仓库开发者也可以使用仓库内路径：
+
+```bash
+dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
+```
+
+安装后重启该 profile。它不会修改 DSH 的共享默认模型。当前兼容性门禁针对 `@deepseek-ai/dsh` 0.1.5-rc.1、其实际加载的 `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 和 Cordis 4.0.2；其他组合必须重新运行隔离主机探针。
 
 ## 构建
 
@@ -88,8 +120,8 @@ node <实际插件根目录>/runtime/connect.mjs
 
 | 工具 | 用途 |
 | --- | --- |
-| `dsh_status` | 区分 DSH 未启动、需要认证和已就绪，并返回明确下一步；不查询具体任务状态 |
-| `dsh_submit` | 提交一个边界明确的任务，返回 taskId；相同请求不会重复派发 |
+| `dsh_status` | 区分 DSH 未启动、需要认证和已就绪；`includeModels: true` 会通过 companion 返回净化后的 provider/model/effort 目录 |
+| `dsh_submit` | 提交一个边界明确的任务，返回 taskId；可选 `modelSelection` 在首个 prompt 前固定该 Session 的精确 route；相同请求不会重复派发 |
 | `dsh_task` | 查询指定任务的状态、结果，或进行有界等待；等待超时不取消任务 |
 | `dsh_cancel` | 请求取消指定任务；请求被接受不等于已停止，也不回滚文件修改 |
 
@@ -101,6 +133,10 @@ node <实际插件根目录>/runtime/connect.mjs
 
 写任务只支持主 Agent 已准备并核对基线提交的 Git linked worktree。DSH 返回完成后，主 Agent 仍需独立检查实际产物；取消请求不回滚已经发生的修改。
 
+需要指定模型时，先调用 `dsh_status` 并传 `includeModels: true`，从返回目录复制精确的 `provider`、`model` 和可选 `reasoningEffort`。不要根据任务关键词猜 route。`modelSelection` 一旦为该 Session 持久化便不可更改，且参与幂等参数哈希；配置、能力或持久化确认失败时不会发送首个 prompt。未传 `modelSelection` 时保持原有默认路由行为。
+
+`dsh_task` 将 `requested`、`configured` 与真实 `request/header` 观察到的 `actualRequest` 分开返回。显式指定模型的 completed 任务必须有匹配的真实 header；不匹配或缺失时不会静默回退并报告成功。
+
 ## 故障排查
 
 - `node` 找不到或版本过低：确认 `node --version` 至少为 22.13，然后重新构建。
@@ -111,6 +147,8 @@ node <实际插件根目录>/runtime/connect.mjs
 - 任务为 `unknown`：使用原 taskId 和 conversationKey 再调用 `dsh_task`，插件会有界读取原会话核对终态；不会创建或重派任务。证据不足时仍保持 unknown，请到 DSH 和工作区核对，写任务占用不会提前释放。
 - 取消后仍显示 `cancel_requested`：这只表示停止请求已发送，必须等到可确认的终止状态；已产生的文件修改不会自动恢复。
 - Codex 找不到工具：确认插件已安装并启用，更新后开启新对话加载工具；再核对构建产物和清单，参见 `docs/COMPATIBILITY.md`。
+- `MODEL_ROUTING_COMPANION_MISSING`：把 bundled companion 安装到 `DSH_SUBAGENT_URL` 指向的同一 profile 并重启；不要用 `session/selectModel` 代替，它会写共享默认模型。
+- `MODEL_ROUTING_CAPABILITY_UNSUPPORTED` 或模型配置失败：用 `dsh_status { includeModels: true }` 重新读取目录，并核对精确 provider/model/effort；插件不会自动换模型。
 
 ## 当前限制
 
@@ -126,7 +164,13 @@ node <实际插件根目录>/runtime/connect.mjs
 
 ## 开发验证
 
-`npm run check` 执行类型检查、可分发构建与 62 项自动化测试。自动化集成测试使用本地 HTTP/WS 模拟 DSH，不代表真实模型任务已完成。
+`npm run check` 执行类型检查、可分发构建与 74 项自动化测试。以下隔离探针还会启动临时 DSH profile、安装 companion 与 synthetic adapter、验证鉴权、双 Session 隔离、默认 Session 不受影响、冷重启恢复、真实 request header，以及 bundled MCP 的 `dsh_submit`→`dsh_task` 完整链路：
+
+```bash
+DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-companion.mjs
+```
+
+synthetic adapter 只证明路由机制，不证明某个外部 provider 或商业模型在当前用户配置中可用。
 
 完成首次连接后，以下命令会向真实 DSH 提交一次受限任务：
 
