@@ -1,5 +1,7 @@
 # codex-subagent-dsh
 
+[简体中文](README.md) | [English](README_EN.md)
+
 `codex-subagent-dsh` 是一个社区 Codex 插件，通过本地 STDIO MCP 把边界明确的任务交给已运行的 DeepSeek Harness（DSH）。Codex 主 Agent 仍负责选择使用 DSH 还是 Codex 原生子 Agent，并负责检查文件、diff、测试与最终验收。
 
 仓库同时提供 Codex marketplace 入口和可直接运行的插件产物。真实 DSH 文本、文件读取和隔离 worktree 修改均已通过；新桌面对话直接调用插件的只读任务也已通过。关闭窗口和整个应用正常退出均已验证：DSH 可继续执行，插件先保留 unknown。重开后可用原 taskId 和 conversationKey 调用 dsh_task，按完整证据恢复终态与结果；崩溃场景仍待验证。
