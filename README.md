@@ -6,6 +6,30 @@
 
 仓库同时提供 Codex marketplace 入口和可直接运行的插件产物。真实 DSH 文本、文件读取和隔离 worktree 修改均已通过；新桌面对话直接调用插件的只读任务也已通过。关闭窗口和整个应用正常退出均已验证：DSH 可继续执行，插件先保留 unknown。重开后可用原 taskId 和 conversationKey 调用 dsh_task，按完整证据恢复终态与结果；崩溃场景仍待验证。
 
+## 快速开始
+
+1. 从 GitHub marketplace 安装插件（仓库已提交可运行产物，不需要克隆或 npm 构建）：
+
+   ```bash
+   codex plugin marketplace add aototo/codex-subagent-dsh --ref main
+   codex plugin add codex-subagent-dsh@codex-subagent-dsh
+   ```
+
+2. 确认本机 DSH 已在回环地址运行；默认地址为 `http://127.0.0.1:3080`，多个 Codex 对话共用这一个实例。
+3. 开启新 Codex 对话，直接说"检查 DSH 连接状态"，按 `dsh_status` 返回的指引完成首次连接：DSH 未启动先启动；待认证时在本地终端运行返回的完整连接命令，并只在终端里输入 DSH 启动登录链接；状态为 `ready` 后即可委派。
+4. （可选）需要 Session 级模型固定时，把随插件一起安装的 `dsh-companion` 目录装进 `DSH_SUBAGENT_URL` 指向的同一 DSH profile 并重启。companion 就在实际安装好的插件根目录下，直接用已安装路径即可，无需克隆仓库或构建：
+
+   ```bash
+   dsh plugin --profile web add -w <已安装插件根目录>/dsh-companion
+   ```
+
+   已安装插件根目录可从 `dsh_status` 待认证响应中的连接命令路径推导（去掉末尾 `/runtime/connect.mjs`）。
+5. 需要指定模型时，先让 Codex 用 `includeModels: true` 调用 `dsh_status`，从返回目录复制精确的 `provider`、`model` 和可选 `reasoningEffort`，然后用自然语言委派，例如：
+
+   > 把这个边界明确的任务交给 DSH，使用 deepseek-official/deepseek-v4-flash（effort low）；你负责检查完整 diff 和验收。
+
+6. 路由验收：`dsh_task` 分别返回 `modelRouting.requested`、`configured` 和由真实 request/header 观察到的 `actualRequest`。显式指定模型的 completed 任务必须有精确匹配的实际 header；缺失或不匹配不会静默回退、不会报告成功。
+
 ## 环境
 
 - Node.js 22.13+（支持 22 LTS 和 24+）
@@ -13,13 +37,13 @@
 - 已在本机回环地址启动的 DSH；默认地址为 `http://127.0.0.1:3080`
 - DSH 启动时生成的登录链接，用于首次本地连接
 
-可选的 Session 模型固定需要把仓库内的 DSH companion 安装到 Codex 实际连接的同一个 DSH profile。它不会修改 DSH 的共享默认模型：
+可选的 Session 模型固定需要把随插件分发的 DSH companion 安装到 Codex 实际连接的同一个 DSH profile。companion 目录已包含在 marketplace 安装的插件根目录中，普通使用者直接指向已安装插件根目录下的 `dsh-companion` 即可，不需要克隆仓库或运行 npm 构建；仓库开发者也可以使用仓库内路径：
 
 ```bash
-dsh plugin --profile web add -w /absolute/path/to/codex-subagent-dsh/plugins/codex-subagent-dsh/dsh-companion
+dsh plugin --profile web add -w <已安装插件根目录>/dsh-companion
 ```
 
-安装后重启该 profile。当前兼容性门禁针对 `@deepseek-ai/dsh` 0.1.5-rc.1、其实际加载的 `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 和 Cordis 4.0.2；其他组合必须重新运行隔离主机探针。
+安装后重启该 profile。它不会修改 DSH 的共享默认模型。当前兼容性门禁针对 `@deepseek-ai/dsh` 0.1.5-rc.1、其实际加载的 `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 和 Cordis 4.0.2；其他组合必须重新运行隔离主机探针。
 
 ## 构建
 

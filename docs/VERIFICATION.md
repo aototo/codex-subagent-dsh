@@ -23,6 +23,7 @@
 
 - 当前 0.2.0 尚未发布到 GitHub marketplace。此前 marketplace 来源安装和生命周期验证属于 0.1.1 历史结果；本轮 0.2.0 本地验收见下节。
 - 自动化集成测试使用本地 HTTP/WS 模拟 DSH；隔离主机探针使用真实 DSH host 和合成 adapter。另已通过下述 DeepSeek 实际 provider 验收；其他 provider/模型仍需分别验证，不能推断 GPT-5.6 Sol 等模型在 DSH 中可用。
+- 0.2.0 的桌面新对话工具发现与显式模型委派来自用户报告，维护者尚未独立复现；从 GitHub 全新安装 0.2.0 的路径仍无验证。
 - 尚未完成 GitHub marketplace 的更新、卸载和其他用户环境回归。
 - 尚未验证宿主或 DSH 崩溃、历史快照分页、跨机器运行和其他操作系统。
 - 插件无法可靠区分正常执行与等待权限或用户输入，阻塞时需要到 DSH 查看。
@@ -39,3 +40,12 @@ DSH 返回完成只表示执行结束。主 Codex Agent 仍需检查实际文件
 - 任务 ID：`828d569a-48f3-4be6-b07a-b99c52cbae9f`。共享默认模型仍为 `devin-proxy / devin/swe-2 / high`；任务执行前后 settings 文件 SHA-256 一致。
 - 本次证明上述实际 provider 的会话模型覆盖闭环；不代表全部模型、其他用户环境或 GitHub 发布安装路径已验证。
 - 本地 Codex marketplace 已安装并启用 0.2.0，旧 selector 已停用但来源与缓存保留。主代理直接启动安装缓存中的 MCP runtime，确认运行时版本 0.2.0、四工具齐全、`dsh_submit` 暴露模型参数，且状态为 ready、modelRouting.available 为 true。桌面新对话的工具发现仍需单独确认。
+
+## 0.2.0 用户报告的桌面新对话验收（2026-09-20）
+
+以下为**用户报告**的实测结果，尚未由维护者在本机独立复现，与上节主机直接运行的探针和实际 provider 验收分开记录：
+
+- 用户报告称：在一个新的 Codex 对话中，插件成功发现已安装的 0.2.0 工具，并准确读取了 README。
+- 用户报告称：通过该对话提交的实际模型固定任务完成，requested、configured、actualRequest 三者均为 `deepseek-official / deepseek-v4-flash / low` 并精确一致；共享默认模型保持不变。
+- 用户报告称：该任务执行后工作区内 36 个项目文件保持不变（任务本身为无工具调用的短文本任务）。
+- 此报告覆盖"新 Codex 对话加载 0.2.0 工具并委派显式模型任务"的端到端路径；全部 provider/模型的可用性、从 GitHub 全新安装 0.2.0 的路径仍无证据，见[验证边界](#验证边界)。

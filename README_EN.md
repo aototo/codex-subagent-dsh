@@ -6,6 +6,30 @@
 
 The repository provides both a Codex marketplace entry and ready-to-run plugin artifacts. Real DSH text tasks, file reads, and changes in isolated worktrees have passed validation. A read-only task invoked directly from a new Codex desktop conversation has also passed. Closing a window and quitting the entire app normally have been tested: DSH can continue running while the plugin initially preserves the task as `unknown`. After reopening Codex, the original `taskId` and `conversationKey` can be passed to `dsh_task` to recover the terminal state and result when complete evidence is available. Crash recovery has not yet been tested.
 
+## Quick start
+
+1. Install the plugin from the GitHub marketplace. The repository ships ready-to-run artifacts, so no clone or npm build is needed:
+
+   ```bash
+   codex plugin marketplace add aototo/codex-subagent-dsh --ref main
+   codex plugin add codex-subagent-dsh@codex-subagent-dsh
+   ```
+
+2. Make sure DSH is running on a loopback address; the default is `http://127.0.0.1:3080`. Multiple Codex conversations share this one instance.
+3. Open a new Codex conversation and say "check the DSH connection status". Follow the `dsh_status` guidance: start DSH if it is not running; if authentication is required, run the returned connect command in your own terminal and paste the DSH startup login URL only into that terminal. Once the state is `ready`, tasks can be delegated.
+4. (Optional) For per-Session model pinning, install the bundled `dsh-companion` directory into the same DSH profile addressed by `DSH_SUBAGENT_URL`, then restart that profile. The companion ships inside the installed plugin root, so point the command at the installed path — no repository clone or build is needed:
+
+   ```bash
+   dsh plugin --profile web add -w <installed-plugin-root>/dsh-companion
+   ```
+
+   Derive the installed plugin root from the connect command in a `dsh_status` authentication-required response by removing the trailing `/runtime/connect.mjs`.
+5. To pick a model, ask Codex to call `dsh_status` with `includeModels: true`, copy the exact `provider`, `model`, and optional `reasoningEffort` from the returned catalog, then delegate in natural language, for example:
+
+   > Delegate this clearly bounded task to DSH using deepseek-official/deepseek-v4-flash (effort low); inspect the full diff and accept the result yourself.
+
+6. Route acceptance: `dsh_task` reports `modelRouting.requested`, `configured`, and `actualRequest` observed from the real request/header separately. An explicitly routed task may only complete successfully with an exactly matching actual header; a missing or mismatched header never silently falls back or reports success.
+
 ## Requirements
 
 - Node.js 22.13+ (Node 22 LTS and 24+ are supported)
@@ -13,13 +37,13 @@ The repository provides both a Codex marketplace entry and ready-to-run plugin a
 - DSH running on a local loopback address; the default is `http://127.0.0.1:3080`
 - The login URL generated when DSH starts, required for the first local connection
 
-Optional per-Session model pinning requires the bundled DSH companion in the same DSH profile that Codex addresses. It never changes DSH's shared default model:
+Optional per-Session model pinning requires the bundled DSH companion in the same DSH profile that Codex addresses. The companion ships inside the plugin root installed from the marketplace, so regular users can point at `<installed-plugin-root>/dsh-companion` directly — no repository clone or npm build is needed. Repository developers may use the in-repo path instead:
 
 ```bash
-dsh plugin --profile web add -w /absolute/path/to/codex-subagent-dsh/plugins/codex-subagent-dsh/dsh-companion
+dsh plugin --profile web add -w <installed-plugin-root>/dsh-companion
 ```
 
-Restart that profile after installation. The current compatibility gate covers `@deepseek-ai/dsh` 0.1.5-rc.1, its resolved `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 packages, and Cordis 4.0.2. Re-run the isolated host probe for other combinations.
+Restart that profile after installation. The companion never changes DSH's shared default model. The current compatibility gate covers `@deepseek-ai/dsh` 0.1.5-rc.1, its resolved `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 packages, and Cordis 4.0.2. Re-run the isolated host probe for other combinations.
 
 ## Build
 
