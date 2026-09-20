@@ -14,20 +14,22 @@ hook。固定配置通过 DSH 官方 `model/selection` Session 事件和命名�
 
 The companion ships inside the installed Codex plugin, so most users can point
 `add -w` at the `dsh-companion` directory under the actual installed plugin
-root — no repository clone or npm build is needed. Derive the installed plugin
-root from the connect command shown by `dsh_status` (strip the trailing
-`/runtime/connect.mjs`):
+root — no repository clone or npm build is needed. Replace the example path
+below with the actual plugin root, which Codex can locate from its loaded Skill
+path. When authentication is required, `dsh_status` also returns a connect command
+whose path ends in `/runtime/connect.mjs`:
 
 ```bash
-dsh plugin --profile web add -w <installed-plugin-root>/dsh-companion
+dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
 ```
 
 本配套插件已随 Codex 插件一起安装，多数用户直接把 `add -w` 指向实际安装插件根目录
-下的 `dsh-companion` 目录即可，无需克隆仓库或运行 npm 构建。可从 `dsh_status`
-返回的连接命令推导插件根目录（去掉末尾 `/runtime/connect.mjs`）：
+下的 `dsh-companion` 目录即可，无需克隆仓库或运行 npm 构建。把示例路径替换为
+实际路径；可让 Codex 从已加载的 Skill 路径定位插件根目录。待认证时，也可从
+`dsh_status` 返回的连接命令中去掉末尾 `/runtime/connect.mjs` 得到该目录：
 
 ```bash
-dsh plugin --profile web add -w <已安装插件根目录>/dsh-companion
+dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
 ```
 
 Repository developers may install from the checkout instead / 仓库开发者也可以

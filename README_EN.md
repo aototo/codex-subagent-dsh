@@ -20,10 +20,10 @@ The repository provides both a Codex marketplace entry and ready-to-run plugin a
 4. (Optional) For per-Session model pinning, install the bundled `dsh-companion` directory into the same DSH profile addressed by `DSH_SUBAGENT_URL`, then restart that profile. The companion ships inside the installed plugin root, so point the command at the installed path — no repository clone or build is needed:
 
    ```bash
-   dsh plugin --profile web add -w <installed-plugin-root>/dsh-companion
+   dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
    ```
 
-   Derive the installed plugin root from the connect command in a `dsh_status` authentication-required response by removing the trailing `/runtime/connect.mjs`.
+   Replace the example absolute path with the actual installed path. Ask Codex to locate the plugin root from its loaded Skill path; when authentication is required, the connect command returned by `dsh_status` also identifies it (remove `/runtime/connect.mjs`). Replace `web` with your active profile. After upgrading or removing the Codex cache, rebind the companion to an existing path and restart DSH.
 5. To pick a model, ask Codex to call `dsh_status` with `includeModels: true`, copy the exact `provider`, `model`, and optional `reasoningEffort` from the returned catalog, then delegate in natural language, for example:
 
    > Delegate this clearly bounded task to DSH using deepseek-official/deepseek-v4-flash (effort low); inspect the full diff and accept the result yourself.
@@ -40,7 +40,7 @@ The repository provides both a Codex marketplace entry and ready-to-run plugin a
 Optional per-Session model pinning requires the bundled DSH companion in the same DSH profile that Codex addresses. The companion ships inside the plugin root installed from the marketplace, so regular users can point at `<installed-plugin-root>/dsh-companion` directly — no repository clone or npm build is needed. Repository developers may use the in-repo path instead:
 
 ```bash
-dsh plugin --profile web add -w <installed-plugin-root>/dsh-companion
+dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
 ```
 
 Restart that profile after installation. The companion never changes DSH's shared default model. The current compatibility gate covers `@deepseek-ai/dsh` 0.1.5-rc.1, its resolved `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 packages, and Cordis 4.0.2. Re-run the isolated host probe for other combinations.

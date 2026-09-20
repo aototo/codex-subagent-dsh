@@ -46,6 +46,12 @@ DSH 返回完成只表示执行结束。主 Codex Agent 仍需检查实际文件
 以下为**用户报告**的实测结果，尚未由维护者在本机独立复现，与上节主机直接运行的探针和实际 provider 验收分开记录：
 
 - 用户报告称：在一个新的 Codex 对话中，插件成功发现已安装的 0.2.0 工具，并准确读取了 README。
-- 用户报告称：通过该对话提交的实际模型固定任务完成，requested、configured、actualRequest 三者均为 `deepseek-official / deepseek-v4-flash / low` 并精确一致；共享默认模型保持不变。
-- 用户报告称：该任务执行后工作区内 36 个项目文件保持不变（任务本身为无工具调用的短文本任务）。
+- 用户报告称：通过该对话提交的实际模型固定任务完成，requested、configured、actualRequest 三者均为 `deepseek-official / deepseek-v4-flash / low` 并精确一致。
+- 用户报告称：该任务执行后工作区内 36 个项目文件保持不变（任务为读取并总结项目 README；比对排除 `.git` 和 `node_modules`）。
 - 此报告覆盖"新 Codex 对话加载 0.2.0 工具并委派显式模型任务"的端到端路径；全部 provider/模型的可用性、从 GitHub 全新安装 0.2.0 的路径仍无证据，见[验证边界](#验证边界)。
+
+## swe-2 / high 文档任务（2026-09-20）
+
+- DSH 插件派发文档更新任务 `51d7840f-0f8c-44ca-928a-5982fbc0c00f`，状态 completed；requested、configured、actualRequest 均为 `devin-proxy / devin/swe-2 / high`。
+- DSH 生成中英文快速开始、companion 安装说明和版本说明，并提交文档变更。主代理审阅实际 diff，纠正验证记录和路径示例后独立运行 `npm run check`，74 项测试通过。
+- 该证据证明此模型的多步文档任务执行和返回；不代表所有 provider/模型均可用。

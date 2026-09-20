@@ -1,8 +1,8 @@
 # Release notes 0.2.0 — per-session DSH model routing
 
-Status: prepared for PR review. 0.2.0 has **not** been published to the GitHub
-marketplace, merged, tagged, or released. Publishing and PR creation are phase 2
-and happen only after maintainer acceptance.
+Status: release candidate on `feat/session-model-routing`. Installing from
+`main` provides 0.2.0 only after the feature PR is merged. No tag or GitHub
+Release has been published.
 
 ## Highlights
 
@@ -47,7 +47,7 @@ Users install the Codex plugin from the marketplace as before
 inside the installed plugin root, so model routing additionally needs:
 
 ```bash
-dsh plugin --profile web add -w <installed-plugin-root>/dsh-companion
+dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
 ```
 
 Run against the same profile addressed by `DSH_SUBAGENT_URL`, then restart that
@@ -87,59 +87,12 @@ User-reported, not yet independently reproduced by the maintainer:
 - 0.2.0 is not yet published to the GitHub marketplace; marketplace install
   and lifecycle evidence belongs to 0.1.1. No fresh GitHub 0.2.0 install,
   update, or uninstall has been verified.
-- Only the DeepSeek official provider above has live evidence; synthetic
-  fixtures prove the mechanism, not other providers or models.
+- Live evidence covers the DeepSeek route above and a documentation task on
+  `devin-proxy / devin/swe-2 / high` (completed with matching requested,
+  configured, and actualRequest). Other providers/models remain unverified.
 - The desktop new-conversation path is user-reported pending independent
   reproduction.
 - Existing 0.1.x limits still apply: loopback-only DSH, no crash-recovery
   verification, no background task takeover, `running` may mask a pending
   permission/input request in DSH, and unprovable terminal states stay
   `unknown` without resubmission.
-
-## PR material
-
-Suggested title:
-
-```text
-feat: add per-session DSH model routing (0.2.0)
-```
-
-Suggested body:
-
-```markdown
-## Summary
-Adds optional per-session model routing: `dsh_submit.modelSelection` pins one
-exact provider/model/reasoningEffort to the new task Session via a bundled,
-authenticated DSH companion. `dsh_status { includeModels: true }` exposes a
-sanitized catalog; `dsh_task` reports requested/configured/actualRequest
-separately with no silent fallback and no writes to the shared default.
-
-## Key changes
-- Optional `modelSelection` on `dsh_submit`; immutable per Session, part of
-  the idempotency hash; first prompt gated on capability, validation, and
-  durable persistence.
-- New `dsh-companion` plugin: `/api/codex-session-model/*` routes,
-  marker-owned `model/selection` persistence, agent-scoped assembly/request
-  hooks.
-- Model catalog discovery and separate actual request/header evidence,
-  including recovery-time matching.
-- Docs: bilingual quickstart, companion install from the installed plugin
-  root, verification records, and these release notes.
-
-## Validation
-- `npm run check` (typecheck + build + 74 tests) passes.
-- Isolated-host probes prove auth gating, concurrent pin isolation, cold
-  restart, unpinned-session default, exact request headers, and unchanged
-  shared default.
-- Live acceptance on `deepseek-official/deepseek-v4-flash/low` completed with
-  requested/configured/actual matching exactly; shared default unchanged.
-- Desktop new-conversation 0.2.0 run is user-reported, pending independent
-  reproduction.
-
-## Known limits
-- 0.2.0 not yet published to the marketplace; no fresh GitHub install/update/
-  uninstall verification.
-- Single real provider verified; no claim for other providers/models.
-- Existing 0.1.x limits (loopback only, no crash-recovery test, no background
-  takeover) unchanged.
-```

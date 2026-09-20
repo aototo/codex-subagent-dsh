@@ -20,10 +20,10 @@
 4. （可选）需要 Session 级模型固定时，把随插件一起安装的 `dsh-companion` 目录装进 `DSH_SUBAGENT_URL` 指向的同一 DSH profile 并重启。companion 就在实际安装好的插件根目录下，直接用已安装路径即可，无需克隆仓库或构建：
 
    ```bash
-   dsh plugin --profile web add -w <已安装插件根目录>/dsh-companion
+   dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
    ```
 
-   已安装插件根目录可从 `dsh_status` 待认证响应中的连接命令路径推导（去掉末尾 `/runtime/connect.mjs`）。
+   将示例绝对路径替换为实际安装路径。可以让 Codex 根据已加载的插件 Skill 路径定位插件根目录；待认证时，也可从 `dsh_status` 返回的连接命令中去掉末尾 `/runtime/connect.mjs` 得到该目录。`web` 请替换为实际使用的 profile。升级或移除 Codex 缓存后，应重新绑定仍存在的 companion 路径并重启 DSH。
 5. 需要指定模型时，先让 Codex 用 `includeModels: true` 调用 `dsh_status`，从返回目录复制精确的 `provider`、`model` 和可选 `reasoningEffort`，然后用自然语言委派，例如：
 
    > 把这个边界明确的任务交给 DSH，使用 deepseek-official/deepseek-v4-flash（effort low）；你负责检查完整 diff 和验收。
@@ -40,7 +40,7 @@
 可选的 Session 模型固定需要把随插件分发的 DSH companion 安装到 Codex 实际连接的同一个 DSH profile。companion 目录已包含在 marketplace 安装的插件根目录中，普通使用者直接指向已安装插件根目录下的 `dsh-companion` 即可，不需要克隆仓库或运行 npm 构建；仓库开发者也可以使用仓库内路径：
 
 ```bash
-dsh plugin --profile web add -w <已安装插件根目录>/dsh-companion
+dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
 ```
 
 安装后重启该 profile。它不会修改 DSH 的共享默认模型。当前兼容性门禁针对 `@deepseek-ai/dsh` 0.1.5-rc.1、其实际加载的 `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 和 Cordis 4.0.2；其他组合必须重新运行隔离主机探针。
