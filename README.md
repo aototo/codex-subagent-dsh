@@ -6,7 +6,7 @@
 
 仓库同时提供 Codex marketplace 入口和可直接运行的插件产物。真实 DSH 文本、文件读取和隔离 worktree 修改均已通过；新桌面对话直接调用插件的只读任务也已通过。关闭窗口和整个应用正常退出均已验证：DSH 可继续执行，插件先保留 unknown。重开后可用原 taskId 和 conversationKey 调用 dsh_task，按完整证据恢复终态与结果；崩溃场景仍待验证。
 
-0.3.0 新增等待授权识别，详情见[发布说明](docs/RELEASE_NOTES_0.3.0.md)。该版本须在 PR 合并后才会由 GitHub `main` 提供。
+0.4.0 新增浏览器确认连接：Codex 发起连接，在已登录的 DSH 页面确认后自动连接，无需运行连接命令或复制登录链接。详情见[发布说明](docs/RELEASE_NOTES_0.4.0.md)；GitHub `main` 在本次 PR 合并后提供此版本。
 
 ## 快速开始
 
@@ -17,15 +17,15 @@
    codex plugin add codex-subagent-dsh@codex-subagent-dsh
    ```
 
-2. 确认本机 DSH 已在回环地址运行；默认地址为 `http://127.0.0.1:3080`，多个 Codex 对话共用这一个实例。
-3. 开启新 Codex 对话，直接说"检查 DSH 连接状态"，按 `dsh_status` 返回的指引完成首次连接：DSH 未启动先启动；待认证时在本地终端运行返回的完整连接命令，并只在终端里输入 DSH 启动登录链接；状态为 `ready` 后即可委派。
-4. （可选）需要 Session 级模型固定时，把随插件一起安装的 `dsh-companion` 目录装进 `DSH_SUBAGENT_URL` 指向的同一 DSH profile 并重启。companion 就在实际安装好的插件根目录下，直接用已安装路径即可，无需克隆仓库或构建：
+2. 确认本机 DSH 已启动，默认地址为 `http://127.0.0.1:3080`。在浏览器中完成 DSH 自己的登录；多个 Codex 对话共用此实例。
+3. 让 Codex 协助将随插件提供的 `dsh-companion` 安装到实际运行的 DSH profile；浏览器连接和指定模型都需要它。无需克隆仓库或 npm 构建：
 
    ```bash
    dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
    ```
 
-   将示例绝对路径替换为实际安装路径。可以让 Codex 根据已加载的插件 Skill 路径定位插件根目录；待认证时，也可从 `dsh_status` 返回的连接命令中去掉末尾 `/runtime/connect.mjs` 得到该目录。`web` 请替换为实际使用的 profile。升级或移除 Codex 缓存后，应重新绑定仍存在的 companion 路径并重启 DSH。
+   `web` 替换为实际 profile。安装/升级后需要重启该 profile：先检查有无运行任务，避免打断共享实例。安装位置可由 Codex 根据已加载 Skill 定位。为避免 Codex 缓存清理导致 DSH 引用失效，建议由 Codex 将 companion 完整复制到稳定的、带版本号的本地数据目录后，从该目录安装；保留旧目录可供回滚。若直接引用缓存路径，升级/卸载后需重新绑定仍存在的路径。
+4. 开启新 Codex 对话，直接说 **“连接我的 DSH”**。Codex 检查状态并打开确认页；核对页面与对话里的匹配码，点击 **“允许连接”**，再告诉 Codex 已确认。插件检查成功后返回 `ready`。若浏览器还没登录 DSH，先通过 DSH 启动时打开的页面登录，再重开确认链接。首次 DSH 登录仍需要完成，但不需要把登录链接复制给 Codex。
 5. 需要指定模型时，先让 Codex 用 `includeModels: true` 调用 `dsh_status`，从返回目录复制精确的 `provider`、`model` 和可选 `reasoningEffort`，然后用自然语言委派，例如：
 
    > 把这个边界明确的任务交给 DSH，使用 deepseek-official/deepseek-v4-flash（effort low）；你负责检查完整 diff 和验收。
@@ -39,7 +39,7 @@
 - 已在本机回环地址启动的 DSH；默认地址为 `http://127.0.0.1:3080`
 - DSH 启动时生成的登录链接，用于首次本地连接
 
-可选的 Session 模型固定需要把随插件分发的 DSH companion 安装到 Codex 实际连接的同一个 DSH profile。companion 目录已包含在 marketplace 安装的插件根目录中，普通使用者直接指向已安装插件根目录下的 `dsh-companion` 即可，不需要克隆仓库或运行 npm 构建；仓库开发者也可以使用仓库内路径：
+浏览器配对与可选的 Session 模型固定都需要把随插件分发的 DSH companion 安装到 Codex 实际连接的同一个 DSH profile。companion 目录已包含在 marketplace 安装的插件根目录中，普通使用者直接指向已安装插件根目录下的 `dsh-companion` 即可，不需要克隆仓库或运行 npm 构建；仓库开发者也可以使用仓库内路径：
 
 ```bash
 dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
@@ -98,31 +98,30 @@ codex plugin marketplace remove codex-subagent-dsh
 
 ## 首次连接
 
-通过 marketplace 安装后，在 Codex 中直接说：
+在 Codex 中说 **“连接我的 DSH”**。`dsh_status` 只检查状态，不会自动打开网页。
 
-> 检查 DSH 连接状态。
+- DSH 未启动：先启动显示地址上的 DSH。
+- companion 缺失或过旧：先在对应 profile 安装/升级本插件附带的 companion，再安全重启。
+- 需要认证：`dsh_connect` 的 `start` 打开确认页；自动打开失败时可以点击返回的确认链接。页面和 Codex 显示相同匹配码。
+- 用户允许后：告诉 Codex 已确认，调用 `dsh_connect` 的 `check`；只有实际 API 验证及凭证保存成功才返回 `ready`。
+- 拒绝/过期：本次配对结束，不自动重试。`cancel` 可取消本次配对。
 
-Codex 会调用 `dsh_status`：
+浏览器配对目前支持 HTTP 的 `127.0.0.1`、`localhost` 和 `[::1]`，默认使用 `http://127.0.0.1:3080`；不支持 HTTPS 或反向代理配对。
 
-- 如果 DSH 未启动，会明确提示先启动 DSH，并显示检查的本机地址。
-- 如果 DSH 已启动但尚未认证，会给出包含实际安装目录的完整连接命令。
-- 如果状态为 `ready`，可以直接派发任务。
+配对页面复用浏览器已登录的 DSH 身份，不会自动登录，也不会代替用户点击确认。确认授予插件访问当前 DSH 的能力；文件、Shell 等操作仍由 DSH 权限策略管理。本版复用已有 DSH 登录 Cookie 的有效期，尚不是可独立撤销或按任务限权的专用凭证。删除插件本地凭证不等于服务端撤销已复制的 Cookie。
 
-首次认证时，把 Codex 返回的完整命令复制到本地终端执行，例如：
+领取凭据只保存在插件运行时内存，不会出现在对话、URL 或确认页。配对有效期为 5 分钟；尚未完成的配对在关闭 Codex 或插件重启后需要重新发起。已保存且仍有效的连接凭证可继续使用。不要把登录链接、token 或 Cookie 发到聊天里。
 
-```bash
-node <实际插件根目录>/runtime/connect.mjs
-```
-
-命令中的实际插件目录由插件自动解析，不需要运行 `codex plugin list` 手动查找。按终端提示输入 DSH 启动登录链接。登录链接和 token 不要粘贴到 Codex 对话、MCP 参数或项目文件中；连接入口只在本机处理并保存凭证。凭证失效时，`dsh_status` 会再次返回连接命令。插件不会安装、升级或重启 DSH。
+兼容回退：没有配对 companion 时，仍可在本地终端执行 `dsh_status` 返回的完整 `connectCommand`，按提示粘贴 DSH 登录链接。正常浏览器配对流程无需执行此命令。插件不会自动安装或重启 DSH。
 
 ## 使用方式
 
-插件公开四个工具：
+插件公开五个工具：
 
 | 工具 | 用途 |
 | --- | --- |
 | `dsh_status` | 区分 DSH 未启动、需要认证和已就绪；`includeModels: true` 会通过 companion 返回净化后的 provider/model/effort 目录 |
+| `dsh_connect` | 发起、检查或取消浏览器配对；用户在 DSH 页面亲自确认，凭证由运行时自动处理 |
 | `dsh_submit` | 提交一个边界明确的任务，返回 taskId；可选 `modelSelection` 在首个 prompt 前固定该 Session 的精确 route；相同请求不会重复派发 |
 | `dsh_task` | 查询指定任务的状态、结果，或进行有界等待；检测到等待授权结果时提前返回，等待超时不取消任务 |
 | `dsh_cancel` | 请求取消指定任务；请求被接受不等于已停止，也不回滚文件修改 |
@@ -143,7 +142,7 @@ node <实际插件根目录>/runtime/connect.mjs
 
 - `node` 找不到或版本过低：确认 `node --version` 至少为 22.13，然后重新构建。
 - DSH 未启动：`dsh_status` 返回 `dsh_not_running`；先启动返回地址对应的 DSH，再检查状态。
-- 未连接或认证失效：`dsh_status` 返回 `authentication_required` 和完整 `connectCommand`；在本地终端运行该命令，不要把登录链接发给模型。
+- 未连接或认证失效：按 `dsh_status` 指引使用 `dsh_connect` 完成浏览器配对；`connectCommand` 仅作兼容回退。
 - `runtime/server.mjs` 不存在：运行 `npm ci && npm run build`。
 - 任务为 `waiting_permission`：插件从连续事件中观察到仍未决定的授权申请；请按返回的 sessionId 打开 DSH 会话检查。处理后继续查询原任务，授权拒绝本身不等于任务失败。插件不会代替用户授权，原任务超时仍继续计时。
 - 任务长时间保持 `running`：普通用户提问及缺少可识别授权事件的等待仍可能显示 running，请到 DSH 检查。

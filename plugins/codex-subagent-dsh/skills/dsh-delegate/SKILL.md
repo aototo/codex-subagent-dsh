@@ -9,7 +9,13 @@ Keep routing and acceptance with the main Codex agent. Decide whether the task f
 
 ## Authentication
 
-Call `dsh_status` before the first delegation and follow its structured state. For `dsh_not_running`, tell the user to start DSH at the returned origin, then check again; do not ask them to run the connection command yet. For `authentication_required`, show the returned `connectCommand` exactly and ask the user to run it in their own terminal, then paste the DSH startup login URL into that terminal. For `ready`, continue without setup instructions. Never ask the user to paste the login URL, its token, or stored credentials into the conversation. Do not put credentials in tool arguments, task context, logs, or files returned to the model.
+Call `dsh_status` before the first delegation. It is read-only and must not open the browser. For `dsh_not_running`, tell the user to start DSH at the returned origin and check again. For `ready`, continue without setup instructions.
+
+For `authentication_required`, inspect the pairing capability. If available, use `dsh_connect` with `action: start` when the user asks to connect. Show the returned matching code and confirmation URL, and ask the user to compare the code and choose Allow or Reject in their logged-in DSH browser. Never approve on their behalf. Do not repeatedly poll while waiting for the user. After they respond, use `action: check`; only `ready` means the API check and private credential save succeeded. `action: cancel` cancels this pending pairing, not DSH tasks or existing credentials. On rejection or expiry, report the outcome without automatically starting again. A process restart loses pending pairing state.
+
+If the companion is missing or outdated, help install the bundled `dsh-companion` in the actual DSH profile. Locate it from this Skill's plugin root; prefer copying the complete companion to a stable, versioned local data directory and retain the previous installation for rollback. Check for running tasks before restarting a shared profile and act within the user's authorization. Do not silently restart or replace their shared instance. A browser not signed into DSH must complete DSH's own login first; pairing does not bypass login.
+
+The grant reuses the browser's existing DSH cookie and expiry. It is not an independently revocable or task-scoped token, and task execution still follows DSH permissions. A `confirmationUrl` is a non-credential link; the private claim secret must never appear in tool results, chat, logs, or URLs. When browser pairing is unavailable, `connectCommand` is the compatibility fallback: show it exactly for the user to run in their own terminal and paste the DSH login URL there. Never ask them to paste login links, tokens, cookies, or stored credentials into chat.
 
 ## Optional model selection
 
@@ -27,9 +33,10 @@ For `mode: write`, submit only a Git linked worktree prepared by the main agent.
 
 Give `dsh_submit` a concrete goal, necessary context, absolute `cwd`, mode, allowed paths where applicable, acceptance criteria, and expected response evidence. Do not ask DSH to call this plugin recursively.
 
-## Four tools
+## Five tools
 
 - `dsh_status`: distinguish `ready`, `dsh_not_running`, and `authentication_required` without creating a task; use its next action and exact installed connection command. Pass `includeModels: true` only when model discovery is needed.
+- `dsh_connect`: start, check, or cancel browser pairing; only the user confirms the authorization in DSH. `openBrowser: false` returns the link without opening it.
 - `dsh_submit`: create one bounded task. Preserve its returned `taskId` and the conversation key. Include `modelSelection` only when the exact route came from companion discovery.
 - `dsh_task`: query or wait for a bounded interval. For an unknown task, perform bounded read-only reconciliation of its original DSH session. Complete, correlated history plus an idle session and empty queues can recover a terminal state and result. A running session or incomplete/conflicting evidence remains unknown. A wait timeout does not cancel the task. Use moderate waits instead of rapid polling.
 - `dsh_cancel`: request a stop. Treat `cancel_requested` as pending until task state confirms termination; cancellation does not roll back file changes.

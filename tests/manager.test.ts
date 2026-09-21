@@ -92,7 +92,7 @@ test('status distinguishes stopped DSH, authentication setup, and ready state', 
   client.reachable = false;
   assert.deepEqual(await manager.status('node "/plugin/runtime/connect.mjs"'), {
     origin: client.origin,
-    tools: ['dsh_status', 'dsh_submit', 'dsh_task', 'dsh_cancel'],
+    tools: ['dsh_status', 'dsh_connect', 'dsh_submit', 'dsh_task', 'dsh_cancel'],
     connected: false,
     dshRunning: false,
     state: 'dsh_not_running',

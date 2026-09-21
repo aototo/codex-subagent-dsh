@@ -1,3 +1,257 @@
+// src/pairing-server.ts
+import { createHash as createHash2 } from "node:crypto";
+
+// src/pairing-state.ts
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+var PairingError = class extends Error {
+  constructor(status) {
+    super("Pairing request could not be completed");
+    this.status = status;
+  }
+  status;
+};
+var token = () => randomBytes(32).toString("hex");
+var equal = (a, b) => {
+  const left = Buffer.from(a), right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
+var claimDigest = (secret) => createHash("sha256").update(secret).digest("hex");
+var PairingState = class {
+  constructor(now = Date.now, ttlMs = 3e5, capacity = 64, pendingLimit = 16) {
+    this.now = now;
+    this.ttlMs = ttlMs;
+    this.capacity = capacity;
+    this.pendingLimit = pendingLimit;
+  }
+  now;
+  ttlMs;
+  capacity;
+  pendingLimit;
+  entries = /* @__PURE__ */ new Map();
+  closed = false;
+  sweep() {
+    const now = this.now();
+    for (const [id, entry] of this.entries) {
+      if (now >= entry.expiresAt && (entry.state === "pending" || entry.state === "approved")) this.finish(entry, "expired");
+      if (now >= entry.removeAt) this.entries.delete(id);
+    }
+  }
+  begin(claimHash, origin) {
+    this.sweep();
+    if (this.closed) throw new PairingError(503);
+    if (!/^[a-f0-9]{64}$/.test(claimHash)) throw new PairingError(400);
+    if (this.entries.size >= this.capacity || [...this.entries.values()].filter((e) => e.state === "pending" || e.state === "approved").length >= this.pendingLimit) throw new PairingError(429);
+    const expiresAt = this.now() + this.ttlMs;
+    const entry = { pairingId: token(), claimHash, origin, matchingCode: randomBytes(4).toString("hex").toUpperCase(), csrf: token(), expiresAt, removeAt: expiresAt + this.ttlMs, state: "pending" };
+    this.entries.set(entry.pairingId, entry);
+    return { protocol: 1, pairingId: entry.pairingId, matchingCode: entry.matchingCode, expiresAt, confirmationUrl: `${origin}/codex-pairing/v1/confirm?id=${entry.pairingId}` };
+  }
+  get(id, origin) {
+    this.sweep();
+    if (this.closed) throw new PairingError(503);
+    const entry = this.entries.get(id);
+    if (!entry) throw new PairingError(404);
+    if (entry.origin !== origin) throw new PairingError(403);
+    return entry;
+  }
+  view(id, origin) {
+    const { pairingId, matchingCode, expiresAt, state, csrf } = this.get(id, origin);
+    return { pairingId, matchingCode, expiresAt, state, origin, csrf };
+  }
+  decide(id, origin, csrf, allow, cookie) {
+    const entry = this.get(id, origin);
+    if (!equal(csrf, entry.csrf)) throw new PairingError(403);
+    if (entry.state !== "pending") throw new PairingError(409);
+    if (allow) {
+      if (!cookie || cookie.length > 4096 || /[\r\n]/.test(cookie)) throw new PairingError(403);
+      entry.cookie = cookie;
+      entry.state = "approved";
+      entry.csrf = "";
+    } else this.finish(entry, "rejected");
+    return entry.state;
+  }
+  authorize(id, origin, secret) {
+    const entry = this.get(id, origin);
+    if (typeof secret !== "string" || !/^[A-Za-z0-9_-]{32,256}$/.test(secret) || !equal(claimDigest(secret), entry.claimHash)) throw new PairingError(403);
+    return entry;
+  }
+  claim(id, origin, secret) {
+    const entry = this.authorize(id, origin, secret);
+    if (entry.state === "approved") {
+      const cookie = entry.cookie;
+      this.finish(entry, "claimed");
+      return { state: "claimed", cookie };
+    }
+    return { state: entry.state };
+  }
+  cancel(id, origin, secret) {
+    const entry = this.authorize(id, origin, secret);
+    if (entry.state === "pending" || entry.state === "approved") this.finish(entry, "cancelled");
+    return { state: entry.state };
+  }
+  finish(entry, state) {
+    entry.state = state;
+    delete entry.cookie;
+    entry.csrf = "";
+  }
+  close() {
+    for (const entry of this.entries.values()) this.finish(entry, "cancelled");
+    this.entries.clear();
+    this.closed = true;
+  }
+};
+
+// src/pairing-server.ts
+var ROOT = "/codex-pairing/v1";
+var STYLE = "body{margin:0;padding:32px 18px;background:#f3f5f7;color:#18212d;font:16px/1.7 system-ui,sans-serif}main{max-width:640px;margin:24px auto;padding:32px;border:1px solid #dce2e9;border-radius:16px;background:white}h1{font-size:26px;margin-top:0}strong{font-family:ui-monospace,monospace;color:#1648a0}button{font:inherit;border:1px solid #bfc9d6;border-radius:8px;padding:10px 22px;cursor:pointer;background:#fff}button[value=allow]{background:#1959b8;border-color:#1959b8;color:white}button:focus-visible{outline:3px solid #80adff;outline-offset:3px}form{margin-top:28px}";
+var STYLE_HASH = createHash2("sha256").update(STYLE).digest("base64");
+var escape = (value) => value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+var loopback = (ip) => ip === "::1" || ip === "127.0.0.1" || ip === "::ffff:127.0.0.1";
+function secureHeaders(res) {
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("referrer-policy", "same-origin");
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("x-frame-options", "DENY");
+  res.setHeader("content-security-policy", `default-src 'none'; style-src 'sha256-${STYLE_HASH}'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`);
+}
+function json(res, value) {
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(value));
+}
+function html(res, body) {
+  res.setHeader("content-type", "text/html; charset=utf-8");
+  res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>\u8FDE\u63A5 Codex \u4E0E DSH</title><style>${STYLE}</style><body><main><h1>\u8FDE\u63A5 Codex \u4E0E DSH</h1>${body}</main></body></html>`);
+}
+async function readBody(req) {
+  if (Number(req.headers["content-length"] ?? 0) > 2048) throw new PairingError(413);
+  const chunks = [];
+  let length = 0;
+  let timer;
+  try {
+    return await Promise.race([
+      (async () => {
+        for await (const chunk of req) {
+          const bytes = Buffer.from(chunk);
+          length += bytes.length;
+          if (length > 2048) throw new PairingError(413);
+          chunks.push(bytes);
+        }
+        return Buffer.concat(chunks).toString("utf8");
+      })(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new PairingError(408));
+          req.destroy();
+        }, 5e3);
+        timer.unref();
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function parseJson(raw, fields) {
+  if (raw.includes("\\")) throw new PairingError(400);
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new PairingError(400);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new PairingError(400);
+  const object = value;
+  if (Object.keys(object).length !== fields.length || fields.some((key) => typeof object[key] !== "string" || (raw.match(new RegExp(`"${key}"\\s*:`, "g")) ?? []).length !== 1) || Object.keys(object).some((key) => !fields.includes(key))) throw new PairingError(400);
+  return object;
+}
+function registerPairing(ctx, state = new PairingState()) {
+  let closed = false;
+  let windowStart = Date.now(), requests = 0, begins = 0;
+  const timer = setInterval(() => state.sweep(), 1e4).unref();
+  ctx.effect(() => () => {
+    closed = true;
+    clearInterval(timer);
+    state.close();
+  });
+  for (const operation of ["capabilities", "begin", "claim", "cancel", "confirm", "decide", "verify"]) {
+    ctx.effect(() => ctx.webServer.register({ kind: "exact", path: `${ROOT}/${operation}`, async handler(req, res) {
+      secureHeaders(res);
+      try {
+        if (closed) throw new PairingError(503);
+        const port = ctx.webServer.port;
+        const host = req.headers.host;
+        if (!Number.isInteger(port) || port < 1 || !loopback(req.socket.remoteAddress) || !host || !["127.0.0.1", "localhost", "[::1]"].some((h) => host === `${h}:${port}` || port === 80 && host === h)) throw new PairingError(403);
+        const names = req.rawHeaders.filter((_, index) => index % 2 === 0).map((n) => n.toLowerCase());
+        if (names.filter((n) => n === "host").length !== 1 || names.filter((n) => n === "origin").length > 1 || names.filter((n) => n === "content-type").length > 1) throw new PairingError(403);
+        const origin = new URL(`http://${host}`).origin;
+        const browserRoute = operation === "confirm" || operation === "decide" || operation === "verify";
+        if (!browserRoute && (req.headers.origin !== void 0 || Object.keys(req.headers).some((k) => k.startsWith("sec-fetch-")))) throw new PairingError(403);
+        if (Date.now() - windowStart >= 6e4) {
+          windowStart = Date.now();
+          requests = begins = 0;
+        }
+        if (++requests > 1200 || operation === "begin" && ++begins > 16) throw new PairingError(429);
+        const method = operation === "capabilities" || operation === "confirm" ? "GET" : "POST";
+        if (req.method !== method) {
+          res.setHeader("allow", method);
+          throw new PairingError(405);
+        }
+        const url = new URL(req.url ?? "", origin);
+        if (operation !== "confirm" && url.search) throw new PairingError(400);
+        if (operation === "capabilities") {
+          json(res, { protocol: 1, pairing: true });
+          return;
+        }
+        if (browserRoute) {
+          if ((operation === "decide" || operation === "verify") && req.headers.origin !== origin) throw new PairingError(403);
+          const rejected = ctx.connection.requestRejection(req);
+          if (rejected !== void 0) {
+            res.statusCode = rejected;
+            html(res, "<p>\u8BF7\u5148\u5728\u6B64\u6D4F\u89C8\u5668\u767B\u5F55\u5F53\u524D DSH\uFF0C\u518D\u91CD\u65B0\u6253\u5F00 Codex \u63D0\u4F9B\u7684\u786E\u8BA4\u9875\u9762\u3002\u6B64\u9875\u9762\u4E0D\u4F1A\u81EA\u52A8\u767B\u5F55\u6216\u6388\u6743\u3002</p>");
+            return;
+          }
+          if (operation === "verify") {
+            if (req.headers["content-type"] !== "application/json") throw new PairingError(415);
+            parseJson(await readBody(req), []);
+            json(res, { protocol: 1, authenticated: true });
+            return;
+          }
+          if (operation === "confirm") {
+            if (url.searchParams.getAll("id").length !== 1 || [...url.searchParams.keys()].some((key) => key !== "id")) throw new PairingError(400);
+            const view = state.view(url.searchParams.get("id"), origin);
+            if (view.state !== "pending") {
+              html(res, `<p>\u6B64\u8BF7\u6C42\u5DF2\u5904\u7406\u6216\u8FC7\u671F\uFF08${escape(view.state)}\uFF09\u3002\u8BF7\u8FD4\u56DE Codex \u67E5\u770B\u7ED3\u679C\u3002</p>`);
+              return;
+            }
+            html(res, `<p>\u4E00\u4E2A\u672C\u673A\u5BA2\u6237\u7AEF\u8BF7\u6C42\u8FDE\u63A5 DSH\u3002\u8BF7\u6C42\u6765\u6E90\u6807\u7B7E\u4E3A Codex \u63D2\u4EF6\uFF0C\u4F46\u8FD9\u4E0D\u662F\u53EF\u4FE1\u8EAB\u4EFD\u8BA4\u8BC1\u3002</p><p>DSH \u5730\u5740\uFF1A<strong>${escape(origin)}</strong></p><p>\u8BF7\u6838\u5BF9 Codex \u4E2D\u663E\u793A\u7684\u5339\u914D\u7801\uFF1A<strong>${escape(view.matchingCode)}</strong></p><p>\u5230\u671F\u65F6\u95F4\uFF1A${escape(new Date(view.expiresAt).toISOString())}\uFF085 \u5206\u949F\u5185\u6709\u6548\uFF09\u3002\u53EA\u6709\u4F60\u521A\u521A\u4E3B\u52A8\u53D1\u8D77\u8FDE\u63A5\u4E14\u5339\u914D\u7801\u4E00\u81F4\u65F6\u624D\u5141\u8BB8\u3002</p><p>\u5141\u8BB8\u540E\uFF0C\u5C06\u5F53\u524D DSH \u767B\u5F55\u51ED\u8BC1\u4EA4\u7ED9\u8BE5\u5BA2\u6237\u7AEF\u4FDD\u5B58\uFF0C\u4F7F\u5176\u53EF\u4EE5\u8C03\u7528\u5F53\u524D DSH \u63A5\u53E3\u3001\u8BFB\u53D6\u4F1A\u8BDD\u548C\u6D3E\u53D1\u4EFB\u52A1\u3002\u6267\u884C\u4ECD\u53D7 DSH \u6743\u9650\u7B56\u7565\u9650\u5236\u3002\u8FD9\u4E0D\u662F\u6309\u4EFB\u52A1\u9650\u6743\u6216\u53EF\u5355\u72EC\u64A4\u9500\u7684\u4EE4\u724C\uFF1B\u5220\u9664\u63D2\u4EF6\u51ED\u8BC1\u4E0D\u4F1A\u4F7F\u5DF2\u590D\u5236\u51ED\u8BC1\u5728 DSH \u5931\u6548\u3002</p><form method="post" action="${ROOT}/decide"><input type="hidden" name="pairingId" value="${escape(view.pairingId)}"><input type="hidden" name="csrf" value="${escape(view.csrf)}"><button type="submit" name="decision" value="allow">\u5141\u8BB8\u8FDE\u63A5</button> <button type="submit" name="decision" value="reject">\u62D2\u7EDD</button></form>`);
+            return;
+          }
+          if (req.headers["content-type"] !== "application/x-www-form-urlencoded") throw new PairingError(415);
+          const form = new URLSearchParams(await readBody(req));
+          if (["pairingId", "csrf", "decision"].some((key) => form.getAll(key).length !== 1) || [...form.keys()].some((k) => !["pairingId", "csrf", "decision"].includes(k)) || !["allow", "reject"].includes(form.get("decision"))) throw new PairingError(400);
+          const name2 = "dsh-auth-" + createHash2("sha256").update(new URL(origin).host).digest("base64url");
+          const cookies = (req.headers.cookie ?? "").split(";").map((v) => v.trim()).filter((v) => v.slice(0, v.indexOf("=")) === name2);
+          if (cookies.length !== 1 || cookies[0].length > 4096 || !new RegExp(`^${name2}=[A-Za-z0-9_.-]+$`).test(cookies[0])) throw new PairingError(403);
+          const result = state.decide(form.get("pairingId"), origin, form.get("csrf"), form.get("decision") === "allow", cookies[0]);
+          html(res, `<p>${result === "approved" ? "\u5DF2\u5141\u8BB8\u8FDE\u63A5\uFF0C\u8BF7\u8FD4\u56DE Codex \u7B49\u5F85\u8FDE\u63A5\u9A8C\u8BC1\u3002" : "\u5DF2\u62D2\u7EDD\u8FDE\u63A5\u3002"}\u4F60\u53EF\u4EE5\u5173\u95ED\u6B64\u9875\u9762\u3002</p>`);
+          return;
+        }
+        if (req.headers["content-type"] !== "application/json") throw new PairingError(415);
+        const fields = operation === "begin" ? ["claimHash"] : ["pairingId", "claimSecret"];
+        const body = parseJson(await readBody(req), fields);
+        if (operation === "begin") json(res, state.begin(body.claimHash, origin));
+        else json(res, operation === "claim" ? state.claim(body.pairingId, origin, body.claimSecret) : state.cancel(body.pairingId, origin, body.claimSecret));
+      } catch (error) {
+        res.statusCode = error instanceof PairingError ? error.status : 500;
+        if (operation === "confirm" || operation === "decide") html(res, "<p>\u8FDE\u63A5\u8BF7\u6C42\u672A\u5B8C\u6210\u3002\u8BF7\u8FD4\u56DE Codex \u68C0\u67E5\u72B6\u6001\uFF0C\u5E76\u4ECE\u5F53\u524D\u786E\u8BA4\u94FE\u63A5\u91CD\u65B0\u6253\u5F00\u9875\u9762\uFF1B\u5982\u8BF7\u6C42\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u53D1\u8D77\u8FDE\u63A5\u3002</p>");
+        else json(res, { error: "pairing_request_failed" });
+      }
+    } }));
+  }
+}
+function applyPairing(ctx) {
+  ctx.inject(["webServer", "connection"], (pairingCtx) => registerPairing(pairingCtx));
+}
+
 // src/dsh-companion.ts
 var name = "codex-session-model-routing";
 var inject = ["agents", "sessionController", "sessions"];
@@ -143,6 +397,7 @@ async function resolveAgent(ctx, sessionId) {
   return agent;
 }
 function apply(ctx) {
+  applyPairing(ctx);
   const installations = /* @__PURE__ */ new Map();
   const locks = /* @__PURE__ */ new Map();
   let closed = false;

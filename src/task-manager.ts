@@ -53,7 +53,7 @@ export class TaskManager {
   constructor(readonly config: BridgeConfig, readonly client: DshApi, readonly store: TaskStore) { store.markOrphans(); }
 
   async status(connectCommand: string, includeModels = false) {
-    const base = { origin: this.client.origin, tools: ['dsh_status', 'dsh_submit', 'dsh_task', 'dsh_cancel'] };
+    const base = { origin: this.client.origin, tools: ['dsh_status', 'dsh_connect', 'dsh_submit', 'dsh_task', 'dsh_cancel'] };
     if (!await this.client.probe()) {
       return {
         ...base,

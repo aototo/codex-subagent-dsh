@@ -9444,8 +9444,8 @@ var require_websocket = __commonJS({
     var http = __require("http");
     var net = __require("net");
     var tls = __require("tls");
-    var { randomBytes: randomBytes2, createHash: createHash3 } = __require("crypto");
-    var { Duplex, Readable } = __require("stream");
+    var { randomBytes: randomBytes3, createHash: createHash4 } = __require("crypto");
+    var { Duplex, Readable: Readable2 } = __require("stream");
     var { URL: URL2 } = __require("url");
     var PerMessageDeflate2 = require_permessage_deflate();
     var Receiver2 = require_receiver();
@@ -9982,7 +9982,7 @@ var require_websocket = __commonJS({
         }
       }
       const defaultPort = isSecure ? 443 : 80;
-      const key2 = randomBytes2(16).toString("base64");
+      const key2 = randomBytes3(16).toString("base64");
       const request = isSecure ? https.request : http.request;
       const protocolSet = /* @__PURE__ */ new Set();
       let perMessageDeflate;
@@ -10112,7 +10112,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash3("sha1").update(key2 + GUID).digest("base64");
+        const digest = createHash4("sha1").update(key2 + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -10481,7 +10481,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter = __require("events");
     var http = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash: createHash3 } = __require("crypto");
+    var { createHash: createHash4 } = __require("crypto");
     var extension2 = require_extension();
     var PerMessageDeflate2 = require_permessage_deflate();
     var subprotocol2 = require_subprotocol();
@@ -10788,7 +10788,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash3("sha1").update(key2 + GUID).digest("base64");
+        const digest = createHash4("sha1").update(key2 + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -31111,8 +31111,8 @@ function rewriteKeyNames(ctx) {
       bySchema.set(entry.schema, entry);
   }
   const rewrites = /* @__PURE__ */ new Map();
-  for (const record3 of pendingRecords.get(ctx) ?? []) {
-    const seen = ctx.seen.get(record3);
+  for (const record4 of pendingRecords.get(ctx) ?? []) {
+    const seen = ctx.seen.get(record4);
     const names = (seen?.def ?? seen?.schema)?.propertyNames;
     if (!names || names === true || rewrites.has(names))
       continue;
@@ -40233,6 +40233,22 @@ function checkedOrigin(config3) {
     throw new DshAuthError("ORIGIN_INVALID", "The configured DSH origin must be a canonical loopback HTTP origin");
   }
 }
+async function ensurePrivateDirectories(config3) {
+  await mkdir(config3.stateDir, { recursive: true, mode: 448 });
+  const stateInfo = await lstat(config3.stateDir);
+  if (!stateInfo.isDirectory() || stateInfo.isSymbolicLink()) {
+    throw new DshAuthError("CREDENTIAL_DIRECTORY_INVALID", "The DSH credential directory is not a private local directory");
+  }
+  await chmod(config3.stateDir, 448);
+  const directory = join(config3.stateDir, CREDENTIAL_DIRECTORY);
+  await mkdir(directory, { recursive: true, mode: 448 });
+  const credentialInfo = await lstat(directory);
+  if (!credentialInfo.isDirectory() || credentialInfo.isSymbolicLink()) {
+    throw new DshAuthError("CREDENTIAL_DIRECTORY_INVALID", "The DSH credential directory is not a private local directory");
+  }
+  await chmod(directory, 448);
+  return directory;
+}
 function parseStoredCredential(value, config3) {
   if (value === null || typeof value !== "object" || value.version !== CREDENTIAL_VERSION || value.origin !== config3.origin || typeof value.cookie !== "string" || !Number.isSafeInteger(value.connectedAt) || value.connectedAt < 0) {
     throw new DshAuthError("CREDENTIAL_INVALID", "Saved DSH credential is invalid; reconnect is required");
@@ -40246,6 +40262,26 @@ function parseStoredCredential(value, config3) {
 function isSafeCookieHeader(value) {
   if (value.length === 0 || value.length > 16384 || /[\r\n]/.test(value)) return false;
   return value.split("; ").every((pair) => /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+=[\x21-\x3A\x3C-\x7E]+$/.test(pair));
+}
+async function saveCredential(config3, credential) {
+  parseStoredCredential(credential, config3);
+  const directory = await ensurePrivateDirectories(config3);
+  const target = credentialPath(config3);
+  const temporary = join(directory, `.credential-${process.pid}-${randomBytes(8).toString("hex")}.tmp`);
+  let handle;
+  try {
+    handle = await open2(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 384);
+    await handle.writeFile(`${JSON.stringify(credential)}
+`, "utf8");
+    await handle.sync();
+    await handle.close();
+    handle = void 0;
+    await rename(temporary, target);
+    await chmod(target, 384);
+  } finally {
+    await handle?.close().catch(() => void 0);
+    await rm(temporary, { force: true }).catch(() => void 0);
+  }
 }
 async function loadCredential(config3) {
   const path2 = credentialPath(config3);
@@ -40380,8 +40416,8 @@ function parseSnapshot(value, sessionId) {
   if (!Number.isSafeInteger(value.cursor) || !Array.isArray(value.records) || typeof value.hasMore !== "boolean") {
     return void 0;
   }
-  for (const record3 of value.records) {
-    if (!isRecord(record3) || record3.type !== "event" || parseWireEvent(record3.event) === void 0) return void 0;
+  for (const record4 of value.records) {
+    if (!isRecord(record4) || record4.type !== "event" || parseWireEvent(record4.event) === void 0) return void 0;
   }
   return value;
 }
@@ -40678,6 +40714,216 @@ var DshClient = class {
   }
 };
 
+// src/pairing-client.ts
+import { createHash as createHash2, randomBytes as randomBytes2 } from "node:crypto";
+import { spawn } from "node:child_process";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { Readable } from "node:stream";
+var PREFIX = "/codex-pairing/v1/";
+var MAX_BYTES = 64 * 1024;
+var Failure = class extends Error {
+  constructor(state) {
+    super(state);
+    this.state = state;
+  }
+  state;
+};
+function record2(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+async function openBrowser(url2) {
+  return await new Promise((resolve3) => {
+    const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "rundll32.exe" : "xdg-open";
+    const args = process.platform === "win32" ? ["url.dll,FileProtocolHandler", url2] : [url2];
+    const child = spawn(command, args, { stdio: "ignore", shell: false });
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve3(false);
+    }, 5e3);
+    child.once("error", () => {
+      clearTimeout(timer);
+      resolve3(false);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve3(code === 0);
+    });
+  });
+}
+var nativeFetch = async (input2, init = {}) => {
+  const url2 = input2 instanceof URL ? input2 : new URL(typeof input2 === "string" ? input2 : input2.url);
+  return await new Promise((resolve3, reject) => {
+    const headers = Object.fromEntries(new Headers(init.headers).entries());
+    const request = (url2.protocol === "https:" ? httpsRequest : httpRequest)(url2, {
+      method: init.method,
+      headers,
+      signal: init.signal ?? void 0
+    }, (response) => {
+      const responseHeaders = new Headers();
+      for (const [name, value] of Object.entries(response.headers)) {
+        if (Array.isArray(value)) for (const item of value) responseHeaders.append(name, item);
+        else if (value !== void 0) responseHeaders.set(name, value);
+      }
+      const status = response.statusCode ?? 500;
+      if ([204, 205, 304].includes(status)) {
+        response.resume();
+        resolve3(new Response(null, { status, headers: responseHeaders }));
+      } else {
+        resolve3(new Response(Readable.toWeb(response), { status, headers: responseHeaders }));
+      }
+    });
+    request.once("error", reject);
+    request.end(typeof init.body === "string" ? init.body : void 0);
+  });
+};
+var PairingClient = class {
+  #config;
+  #deps;
+  #pending;
+  #queue = Promise.resolve();
+  constructor(config3, dependencies = {}) {
+    this.#config = { ...config3, origin: normalizeLoopbackOrigin(config3.origin) };
+    this.#deps = { fetch: dependencies.fetch ?? nativeFetch, openBrowser: dependencies.openBrowser ?? openBrowser, now: dependencies.now ?? Date.now, saveCredential: dependencies.saveCredential ?? saveCredential };
+  }
+  async #request(path2, body, cookie) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.#config.rpcTimeoutMs);
+    try {
+      const serialized = body === void 0 ? void 0 : JSON.stringify(body);
+      if (serialized && Buffer.byteLength(serialized) > MAX_BYTES) throw new Failure("invalid_response");
+      const response = await this.#deps.fetch(new URL(path2, this.#config.origin), {
+        method: body === void 0 ? "GET" : "POST",
+        redirect: "manual",
+        signal: controller.signal,
+        headers: { accept: "application/json", "cache-control": "no-store", ...body === void 0 ? {} : { "content-type": "application/json" }, ...cookie === void 0 ? {} : { cookie, origin: this.#config.origin } },
+        body: serialized
+      });
+      if (!response.ok || response.status >= 300) await response.body?.cancel();
+      if (response.status === 404) throw new Failure("pairing_unsupported");
+      if (response.status === 401) throw new Failure("authentication_required");
+      if (response.status === 403) throw new Failure("pairing_forbidden");
+      if (response.status === 429) throw new Failure("rate_limited");
+      if (!response.ok || response.status >= 300) throw new Failure("invalid_response");
+      if (Number(response.headers.get("content-length")) > MAX_BYTES || !response.body) {
+        await response.body?.cancel();
+        throw new Failure("invalid_response");
+      }
+      const reader = response.body.getReader();
+      const chunks = [];
+      let size = 0;
+      for (; ; ) {
+        const part = await reader.read();
+        if (part.done) break;
+        size += part.value.byteLength;
+        if (size > MAX_BYTES) {
+          await reader.cancel();
+          throw new Failure("invalid_response");
+        }
+        chunks.push(part.value);
+      }
+      return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch (error62) {
+      if (error62 instanceof Failure) throw error62;
+      if (error62 instanceof SyntaxError) throw new Failure("invalid_response");
+      throw new Failure(controller.signal.aborted ? "connection_timeout" : "dsh_not_running");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  async #authenticated(cookie) {
+    const value = await this.#request(`${PREFIX}verify`, {}, cookie);
+    return record2(value) && value.protocol === 1 && value.authenticated === true;
+  }
+  async status() {
+    try {
+      const value = await this.#request(`${PREFIX}capabilities`);
+      if (!record2(value) || value.protocol !== 1 || value.pairing !== true) return { state: "pairing_unsupported", available: false, nextAction: "Install or upgrade the DSH companion with browser pairing support." };
+      return { state: "pairing_available", available: true, nextAction: "Use dsh_connect with action=start to request browser confirmation." };
+    } catch (error62) {
+      if (error62 instanceof Failure && ["authentication_required", "invalid_response"].includes(error62.state)) {
+        return { ...this.#failure(new Failure("pairing_unsupported")), available: false };
+      }
+      return { ...this.#failure(error62), available: false };
+    }
+  }
+  #failure(error62) {
+    const state = error62 instanceof Failure ? error62.state : "connection_failed";
+    return { state, connected: false, nextAction: state === "pairing_forbidden" ? "DSH rejected the request origin or access. Check the configured local address and DSH access settings before retrying." : state === "dsh_not_running" ? "Start DSH at the configured address, then explicitly start a new connection." : state === "pairing_unsupported" ? "Install or upgrade the DSH companion, then restart DSH when safe." : "The connection was not completed. Check DSH, then explicitly start a new pairing; do not paste credentials into chat." };
+  }
+  #view(pending) {
+    return { state: "pending", connected: false, confirmationUrl: pending.confirmationUrl, matchingCode: pending.matchingCode, expiresAt: pending.expiresAt, browserOpened: pending.browserOpened, nextAction: "Open the confirmation page in your logged-in DSH browser, compare the matching code, and choose allow or reject. Then call dsh_connect with action=check." };
+  }
+  connect(action, shouldOpen = true) {
+    const result = this.#queue.then(() => this.#connect(action, shouldOpen));
+    this.#queue = result.catch(() => void 0);
+    return result;
+  }
+  async #connect(action, shouldOpen) {
+    try {
+      if (this.#pending && this.#pending.expiresAt <= this.#deps.now()) {
+        this.#pending = void 0;
+        return { state: "expired", connected: false, nextAction: "Explicitly start a new pairing." };
+      }
+      if (action === "start") {
+        if (this.#pending) return this.#view(this.#pending);
+        const credential = await loadCredential(this.#config).catch(() => void 0);
+        if (credential) {
+          try {
+            if (await this.#authenticated(credential.cookie)) return { state: "ready", connected: true };
+          } catch (error62) {
+            if (!(error62 instanceof Failure) || !["authentication_required", "pairing_forbidden"].includes(error62.state)) throw error62;
+          }
+        }
+        const capability = await this.status();
+        if (capability.state !== "pairing_available") return capability;
+        const claimSecret = randomBytes2(32).toString("hex");
+        const value2 = await this.#request(`${PREFIX}begin`, { claimHash: createHash2("sha256").update(claimSecret).digest("hex") });
+        if (!record2(value2) || value2.protocol !== 1 || typeof value2.pairingId !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(value2.pairingId) || typeof value2.matchingCode !== "string" || !/^[A-Z0-9-]{4,32}$/.test(value2.matchingCode) || typeof value2.expiresAt !== "number" || !Number.isSafeInteger(value2.expiresAt) || value2.expiresAt <= this.#deps.now() || value2.expiresAt > this.#deps.now() + 10 * 6e4 || typeof value2.confirmationUrl !== "string") throw new Failure("invalid_response");
+        const expected = new URL(`${PREFIX}confirm`, this.#config.origin);
+        expected.searchParams.set("id", value2.pairingId);
+        if (value2.confirmationUrl !== expected.href) throw new Failure("invalid_response");
+        this.#pending = { pairingId: value2.pairingId, claimSecret, matchingCode: value2.matchingCode, expiresAt: value2.expiresAt, confirmationUrl: expected.href, browserOpened: false };
+        if (shouldOpen) this.#pending.browserOpened = await this.#deps.openBrowser(expected.href).catch(() => false);
+        return this.#view(this.#pending);
+      }
+      const pending = this.#pending;
+      if (!pending) {
+        if (action === "cancel") return { state: "no_pending_pairing", nextAction: "There is no pending pairing to cancel. Saved connection credentials were not changed." };
+        const credential = await loadCredential(this.#config).catch(() => void 0);
+        if (credential) {
+          if (await this.#authenticated(credential.cookie)) return { state: "ready", connected: true };
+          throw new Failure("authentication_failed");
+        }
+        return { state: "no_pending_pairing", connected: false, nextAction: "Start a new pairing explicitly; pending connections cannot be restored after restart." };
+      }
+      const value = await this.#request(`${PREFIX}${action === "cancel" ? "cancel" : "claim"}`, { pairingId: pending.pairingId, claimSecret: pending.claimSecret });
+      if (!record2(value) || typeof value.state !== "string" || !["pending", "rejected", "expired", "cancelled", "claimed"].includes(value.state)) throw new Failure("invalid_response");
+      if (value.state === "pending" && action === "check") return this.#view(pending);
+      this.#pending = void 0;
+      if (value.state === "claimed" && action === "check") {
+        if (typeof value.cookie !== "string" || !isSafeCookieHeader(value.cookie)) throw new Failure("pairing_already_claimed");
+        if (!await this.#authenticated(value.cookie)) throw new Failure("authentication_failed");
+        try {
+          await this.#deps.saveCredential(this.#config, { version: 1, origin: this.#config.origin, cookie: value.cookie, connectedAt: this.#deps.now() });
+        } catch {
+          throw new Failure("credential_save_failed");
+        }
+        return { state: "ready", connected: true };
+      }
+      if (value.state === "pending") throw new Failure("invalid_response");
+      if (action === "cancel") return { state: value.state, nextAction: "Pairing ended. Saved connection credentials were not changed." };
+      return { state: value.state, connected: false, nextAction: "No connection was saved. Start a new pairing explicitly if needed." };
+    } catch (error62) {
+      this.#pending = void 0;
+      return this.#failure(error62);
+    }
+  }
+  async shutdown() {
+    await this.connect("cancel", false);
+  }
+};
+
 // src/task-store.ts
 import { chmodSync, mkdirSync } from "node:fs";
 import { resolve as resolve2, sep } from "node:path";
@@ -40742,24 +40988,24 @@ var TaskStore = class {
       if (!columns.has("actual_model_seq")) this.#database.exec("ALTER TABLE tasks ADD COLUMN actual_model_seq INTEGER");
     });
   }
-  reserve(record3) {
+  reserve(record4) {
     this.#assertOpen();
     const normalizedRecord = {
-      ...record3,
-      cwd: normalizeDirectory(record3.cwd)
+      ...record4,
+      cwd: normalizeDirectory(record4.cwd)
     };
     return this.#transaction(() => {
       const duplicate = this.#database.prepare(
         `SELECT * FROM tasks
            WHERE origin = ? AND conversation_key = ? AND request_id = ?`
-      ).get(record3.origin, record3.conversationKey, record3.requestId);
+      ).get(record4.origin, record4.conversationKey, record4.requestId);
       if (duplicate) {
-        if (duplicate.input_hash !== record3.inputHash) {
+        if (duplicate.input_hash !== record4.inputHash) {
           throw new Error("request parameters conflict");
         }
         return { created: false, task: rowToTask(duplicate) };
       }
-      const taskIdConflict = this.#database.prepare("SELECT 1 FROM tasks WHERE task_id = ?").get(record3.taskId);
+      const taskIdConflict = this.#database.prepare("SELECT 1 FROM tasks WHERE task_id = ?").get(record4.taskId);
       if (taskIdConflict) {
         throw new Error("task id conflict");
       }
@@ -40963,7 +41209,7 @@ function pidExists(pid) {
 }
 
 // src/task-manager.ts
-import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
+import { createHash as createHash3, randomUUID as randomUUID2 } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -41003,14 +41249,14 @@ var ApprovalState = class {
 
 // src/model-routing.ts
 var MODEL_ROUTING_PROTOCOL = 1;
-function record2(value) {
+function record3(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 function identifier(value) {
   return typeof value === "string" && value.length > 0 && value.length <= 256 && !/[\r\n\0]/.test(value);
 }
 function parseModelSelection(value) {
-  if (!record2(value) || !identifier(value.provider) || !identifier(value.model)) return void 0;
+  if (!record3(value) || !identifier(value.provider) || !identifier(value.model)) return void 0;
   if (value.reasoningEffort !== void 0 && !identifier(value.reasoningEffort)) return void 0;
   if (Object.keys(value).some((key2) => !["provider", "model", "reasoningEffort"].includes(key2))) return void 0;
   return {
@@ -41028,7 +41274,7 @@ function matchesRequestedSelection(actual, requested) {
 function modelSelectionFromHeaderEvent(event) {
   if (event.type !== "request/header") return void 0;
   const config3 = event.data?.header?.config;
-  if (!record2(config3)) return void 0;
+  if (!record3(config3)) return void 0;
   return parseModelSelection({
     provider: config3.provider,
     model: config3.model,
@@ -41036,31 +41282,31 @@ function modelSelectionFromHeaderEvent(event) {
   });
 }
 function validateCapabilities(value) {
-  const operations = record2(value) && Array.isArray(value.operations) ? value.operations : void 0;
-  if (!record2(value) || value.protocol !== MODEL_ROUTING_PROTOCOL || value.persistence !== "session-log" || operations === void 0 || !["capabilities.get", "selection.set", "selection.get"].every((operation) => operations.includes(operation))) {
+  const operations = record3(value) && Array.isArray(value.operations) ? value.operations : void 0;
+  if (!record3(value) || value.protocol !== MODEL_ROUTING_PROTOCOL || value.persistence !== "session-log" || operations === void 0 || !["capabilities.get", "selection.set", "selection.get"].every((operation) => operations.includes(operation))) {
     throw new Error("DSH model-routing companion returned unsupported capabilities");
   }
   return { protocol: MODEL_ROUTING_PROTOCOL, persistence: "session-log" };
 }
 function discoverableModels(value) {
   validateCapabilities(value);
-  const catalog = record2(value) ? value.catalog : void 0;
-  if (!record2(catalog)) throw new Error("DSH model-routing companion returned an invalid model catalog");
+  const catalog = record3(value) ? value.catalog : void 0;
+  if (!record3(catalog)) throw new Error("DSH model-routing companion returned an invalid model catalog");
   const selectedDefault = parseModelSelection(catalog.default);
   const routable = Array.isArray(catalog.routableProviders) ? catalog.routableProviders.filter(identifier) : void 0;
   if (selectedDefault === void 0 || routable === void 0 || routable.length > 100 || !Array.isArray(catalog.groups)) {
     throw new Error("DSH model-routing companion returned an invalid model catalog");
   }
   const providers = catalog.groups.flatMap((group) => {
-    if (!record2(group) || !identifier(group.id) || !routable.includes(group.id) || !Array.isArray(group.models)) return [];
+    if (!record3(group) || !identifier(group.id) || !routable.includes(group.id) || !Array.isArray(group.models)) return [];
     const name = identifier(group.name) ? group.name : group.id;
     const models = group.models.slice(0, 500).flatMap((model) => {
-      if (!record2(model) || !identifier(model.id)) return [];
-      const reasoning = record2(model.reasoning) && Array.isArray(model.reasoning.efforts) ? model.reasoning.efforts : [];
+      if (!record3(model) || !identifier(model.id)) return [];
+      const reasoning = record3(model.reasoning) && Array.isArray(model.reasoning.efforts) ? model.reasoning.efforts : [];
       return [{
         model: model.id,
         name: identifier(model.name) ? model.name : model.id,
-        reasoningEfforts: reasoning.flatMap((effort) => record2(effort) && identifier(effort.id) ? [effort.id] : []).slice(0, 100)
+        reasoningEfforts: reasoning.flatMap((effort) => record3(effort) && identifier(effort.id) ? [effort.id] : []).slice(0, 100)
       }];
     });
     return [{ provider: group.id, name, models }];
@@ -41069,7 +41315,7 @@ function discoverableModels(value) {
   return { default: selectedDefault, providers };
 }
 function validateSetResponse(value, expectedSessionId, expected) {
-  if (!record2(value) || value.protocol !== MODEL_ROUTING_PROTOCOL || value.sessionId !== expectedSessionId || value.persisted !== true) {
+  if (!record3(value) || value.protocol !== MODEL_ROUTING_PROTOCOL || value.sessionId !== expectedSessionId || value.persisted !== true) {
     throw new Error("DSH model-routing companion returned an invalid selection receipt");
   }
   const selected = parseModelSelection(value.selection);
@@ -41109,9 +41355,9 @@ function inspectRecoveryHistory(task, snapshot) {
   const requestedModel = task.input?.modelSelection;
   const approvals = new ApprovalState();
   for (let index = 0; index < snapshot.records.length; index++) {
-    const record3 = snapshot.records[index];
-    const event = record3?.event;
-    if (record3?.type !== "event" || event?.seq !== index) return invalid("RECOVERY_HISTORY_GAPPED");
+    const record4 = snapshot.records[index];
+    const event = record4?.event;
+    if (record4?.type !== "event" || event?.seq !== index) return invalid("RECOVERY_HISTORY_GAPPED");
     if (event.type === "approval/asked" || event.type === "approval/decided") {
       if (turn === void 0 || promptSeq === void 0 || terminal2 !== void 0 || !approvals.accept(event)) {
         return invalid("RECOVERY_APPROVAL_EVIDENCE_INVALID");
@@ -41233,7 +41479,7 @@ var TaskManager = class {
   recoveries = /* @__PURE__ */ new Map();
   closed = false;
   async status(connectCommand2, includeModels = false) {
-    const base = { origin: this.client.origin, tools: ["dsh_status", "dsh_submit", "dsh_task", "dsh_cancel"] };
+    const base = { origin: this.client.origin, tools: ["dsh_status", "dsh_connect", "dsh_submit", "dsh_task", "dsh_cancel"] };
     if (!await this.client.probe()) {
       return {
         ...base,
@@ -41322,14 +41568,14 @@ var TaskManager = class {
     const input2 = await this.normalize(raw);
     if (this.closed) throw new Error("Task manager is closing");
     const now = Date.now();
-    const record3 = { taskId: randomUUID2(), requestId: input2.requestId, conversationKey: input2.conversationKey, origin: this.client.origin, inputHash: createHash2("sha256").update(stable(input2)).digest("hex"), input: input2, cwd: input2.cwd, sessionId: "session-" + randomUUID2(), state: "queued", ownerId: this.ownerId, ownerPid: process.pid, createdAt: now, updatedAt: now, deadlineAt: now + this.config.taskTimeoutMs, attempt: 1 };
-    const reserved = this.store.reserve(record3);
+    const record4 = { taskId: randomUUID2(), requestId: input2.requestId, conversationKey: input2.conversationKey, origin: this.client.origin, inputHash: createHash3("sha256").update(stable(input2)).digest("hex"), input: input2, cwd: input2.cwd, sessionId: "session-" + randomUUID2(), state: "queued", ownerId: this.ownerId, ownerPid: process.pid, createdAt: now, updatedAt: now, deadlineAt: now + this.config.taskTimeoutMs, attempt: 1 };
+    const reserved = this.store.reserve(record4);
     if (!reserved.created) return reserved.task;
     const run = { task: reserved.task, submitted: false, seenPrompt: false, lastSeq: -1, result: "", finishing: false, approvals: new ApprovalState() };
-    this.active.set(record3.taskId, run);
+    this.active.set(record4.taskId, run);
     run.timer = setTimeout(() => {
-      void this.cancel(record3.conversationKey, record3.taskId).catch(() => this.uncertain(run, "TIMEOUT_CANCEL_FAILED"));
-    }, Math.max(1, record3.deadlineAt - Date.now()));
+      void this.cancel(record4.conversationKey, record4.taskId).catch(() => this.uncertain(run, "TIMEOUT_CANCEL_FAILED"));
+    }, Math.max(1, record4.deadlineAt - Date.now()));
     void this.dispatch(run);
     return reserved.task;
   }
@@ -41776,7 +42022,8 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
 var config2 = loadConfig();
 var store = new TaskStore(config2.stateDir);
 var manager = new TaskManager(config2, new DshClient(config2), store);
-var server = new McpServer({ name: "codex-subagent-dsh", version: "0.3.0" });
+var pairing = new PairingClient(config2);
+var server = new McpServer({ name: "codex-subagent-dsh", version: "0.4.0" });
 var connectCommand = `node ${JSON.stringify(fileURLToPath(new URL("./connect.mjs", import.meta.url)))}`;
 var key = external_exports.string().min(1).max(128);
 var scope = { conversationKey: key, taskId: external_exports.string().uuid() };
@@ -41802,10 +42049,21 @@ async function guarded(work) {
   } catch (error62) {
     const code = error62?.code;
     const message = error62 instanceof Error ? error62.message.replace(/https?:\/\/\S+/g, "[URL]").replace(/(?:token|cookie|authorization)\s*[=:]\s*\S+/gi, "[credential]") : "Request failed";
-    return { ...content({ error: typeof code === "string" ? code : "REQUEST_FAILED", message: message.slice(0, 400), guidance: "For authentication errors run the local connect command. Do not paste login links or credentials into chat." }), isError: true };
+    return { ...content({ error: typeof code === "string" ? code : "REQUEST_FAILED", message: message.slice(0, 400), guidance: "Check dsh_status for connection guidance. Do not paste login links or credentials into chat." }), isError: true };
   }
 }
-server.registerTool("dsh_status", { description: "Check whether local DSH is running and authenticated without creating a task. Set includeModels to discover sanitized provider/model/effort routes from the optional companion. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.", inputSchema: { includeModels: external_exports.boolean().default(false) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input2) => guarded(() => manager.status(connectCommand, input2.includeModels)));
+server.registerTool("dsh_status", { description: "Check whether local DSH is running and authenticated without creating a task. Set includeModels to discover sanitized provider/model/effort routes from the optional companion. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.", inputSchema: { includeModels: external_exports.boolean().default(false) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input2) => guarded(async () => {
+  const status = await manager.status(connectCommand, input2.includeModels);
+  if (status.state !== "authentication_required") return status;
+  const capability = await pairing.status();
+  if (!capability.available && capability.state !== "pairing_unsupported") return { ...status, pairing: capability, nextAction: capability.state === "dsh_not_running" ? "start_dsh" : "check_connection", guidance: capability.nextAction };
+  return { ...status, pairing: capability, nextAction: capability.available ? "connect_in_browser" : "install_or_update_companion", guidance: capability.available ? "Ask the user to start browser pairing with dsh_connect, compare the matching code, and confirm in their logged-in DSH browser. Never approve for them." : "Install or update the bundled DSH companion in this profile for browser pairing. The returned connectCommand remains a terminal fallback." };
+}));
+server.registerTool("dsh_connect", {
+  description: "Start, check, or cancel browser pairing with the running local DSH. Start opens a confirmation page once (openBrowser=false returns its URL). Show the matching code and wait for the user to allow or reject in their logged-in DSH browser; never click approval for them. Check after their response. Pairing credentials stay inside the runtime. Does not create an agent task, install a companion, or change execution permissions.",
+  inputSchema: { action: external_exports.enum(["start", "check", "cancel"]).default("start"), openBrowser: external_exports.boolean().default(true) },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
+}, (input2) => guarded(() => pairing.connect(input2.action, input2.openBrowser)));
 server.registerTool("dsh_submit", {
   description: "Delegate one bounded task to a new local DSH session. Use a stable conversationKey and requestId; duplicates do not resubmit. Optional modelSelection pins one exact provider/model/effort to this Session before its first prompt and requires the DSH companion. Main agent retains final acceptance. Write mode requires a clean, separate Git linked worktree and its HEAD baseline. Read mode is a task instruction, not a sandbox.",
   inputSchema: { conversationKey: key, requestId: key, goal: external_exports.string().min(1).max(16e3), context: external_exports.string().max(32e3).optional(), cwd: external_exports.string().min(1).max(4096), mode: external_exports.enum(["read", "write"]), allowedPaths: external_exports.array(external_exports.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: external_exports.array(external_exports.string().min(1).max(2e3)).min(1).max(30), baselineCommit: external_exports.string().regex(/^[a-fA-F0-9]{40}$/).optional(), modelSelection: external_exports.object({ provider: external_exports.string().min(1).max(256), model: external_exports.string().min(1).max(256), reasoningEffort: external_exports.string().min(1).max(256).optional() }).strict().optional() },
@@ -41818,6 +42076,7 @@ async function close() {
   if (closing) return;
   closing = true;
   manager.shutdown();
+  await pairing.shutdown();
   await server.close().catch(() => {
   });
   store.close();

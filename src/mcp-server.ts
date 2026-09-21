@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { loadConfig } from './config.js';
 import { DshClient } from './dsh-client.js';
+import { PairingClient } from './pairing-client.js';
 import { TaskStore } from './task-store.js';
 import { TaskManager } from './task-manager.js';
 import type { TaskRecord } from './types.js';
@@ -11,7 +12,8 @@ import type { TaskRecord } from './types.js';
 const config = loadConfig();
 const store = new TaskStore(config.stateDir);
 const manager = new TaskManager(config, new DshClient(config), store);
-const server = new McpServer({ name: 'codex-subagent-dsh', version: '0.3.0' });
+const pairing = new PairingClient(config);
+const server = new McpServer({ name: 'codex-subagent-dsh', version: '0.4.0' });
 const connectCommand = `node ${JSON.stringify(fileURLToPath(new URL('./connect.mjs', import.meta.url)))}`;
 const key = z.string().min(1).max(128);
 const scope = { conversationKey: key, taskId: z.string().uuid() };
@@ -37,10 +39,23 @@ async function guarded(work: () => Promise<unknown>) {
     const code = (error as any)?.code;
     // Error messages from our own modules are bounded; never reflect remote response bodies.
     const message = error instanceof Error ? error.message.replace(/https?:\/\/\S+/g, '[URL]').replace(/(?:token|cookie|authorization)\s*[=:]\s*\S+/gi, '[credential]') : 'Request failed';
-    return { ...content({ error: typeof code === 'string' ? code : 'REQUEST_FAILED', message: message.slice(0, 400), guidance: 'For authentication errors run the local connect command. Do not paste login links or credentials into chat.' }), isError: true };
+    return { ...content({ error: typeof code === 'string' ? code : 'REQUEST_FAILED', message: message.slice(0, 400), guidance: 'Check dsh_status for connection guidance. Do not paste login links or credentials into chat.' }), isError: true };
   }
 }
-server.registerTool('dsh_status', { description: 'Check whether local DSH is running and authenticated without creating a task. Set includeModels to discover sanitized provider/model/effort routes from the optional companion. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.', inputSchema: { includeModels: z.boolean().default(false) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, input => guarded(() => manager.status(connectCommand, input.includeModels)));
+server.registerTool('dsh_status', { description: 'Check whether local DSH is running and authenticated without creating a task. Set includeModels to discover sanitized provider/model/effort routes from the optional companion. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.', inputSchema: { includeModels: z.boolean().default(false) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, input => guarded(async () => {
+  const status = await manager.status(connectCommand, input.includeModels);
+  if (status.state !== 'authentication_required') return status;
+  const capability = await pairing.status();
+  if (!capability.available && capability.state !== 'pairing_unsupported') return { ...status, pairing: capability, nextAction: capability.state === 'dsh_not_running' ? 'start_dsh' : 'check_connection', guidance: capability.nextAction };
+  return { ...status, pairing: capability, nextAction: capability.available ? 'connect_in_browser' : 'install_or_update_companion', guidance: capability.available
+    ? 'Ask the user to start browser pairing with dsh_connect, compare the matching code, and confirm in their logged-in DSH browser. Never approve for them.'
+    : 'Install or update the bundled DSH companion in this profile for browser pairing. The returned connectCommand remains a terminal fallback.' };
+}));
+server.registerTool('dsh_connect', {
+  description: 'Start, check, or cancel browser pairing with the running local DSH. Start opens a confirmation page once (openBrowser=false returns its URL). Show the matching code and wait for the user to allow or reject in their logged-in DSH browser; never click approval for them. Check after their response. Pairing credentials stay inside the runtime. Does not create an agent task, install a companion, or change execution permissions.',
+  inputSchema: { action: z.enum(['start', 'check', 'cancel']).default('start'), openBrowser: z.boolean().default(true) },
+  annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+}, input => guarded(() => pairing.connect(input.action, input.openBrowser)));
 server.registerTool('dsh_submit', {
   description: 'Delegate one bounded task to a new local DSH session. Use a stable conversationKey and requestId; duplicates do not resubmit. Optional modelSelection pins one exact provider/model/effort to this Session before its first prompt and requires the DSH companion. Main agent retains final acceptance. Write mode requires a clean, separate Git linked worktree and its HEAD baseline. Read mode is a task instruction, not a sandbox.',
   inputSchema: { conversationKey: key, requestId: key, goal: z.string().min(1).max(16000), context: z.string().max(32000).optional(), cwd: z.string().min(1).max(4096), mode: z.enum(['read', 'write']), allowedPaths: z.array(z.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: z.array(z.string().min(1).max(2000)).min(1).max(30), baselineCommit: z.string().regex(/^[a-fA-F0-9]{40}$/).optional(), modelSelection: z.object({ provider: z.string().min(1).max(256), model: z.string().min(1).max(256), reasoningEffort: z.string().min(1).max(256).optional() }).strict().optional() },
@@ -54,6 +69,7 @@ async function close() {
   if (closing) return;
   closing = true;
   manager.shutdown();
+  await pairing.shutdown();
   await server.close().catch(() => {});
   store.close();
 }

@@ -6,7 +6,7 @@
 
 The repository provides both a Codex marketplace entry and ready-to-run plugin artifacts. Real DSH text tasks, file reads, and changes in isolated worktrees have passed validation. A read-only task invoked directly from a new Codex desktop conversation has also passed. Closing a window and quitting the entire app normally have been tested: DSH can continue running while the plugin initially preserves the task as `unknown`. After reopening Codex, the original `taskId` and `conversationKey` can be passed to `dsh_task` to recover the terminal state and result when complete evidence is available. Crash recovery has not yet been tested.
 
-0.3.0 adds permission-wait detection; see the [release notes](docs/RELEASE_NOTES_0.3.0.md). GitHub `main` provides this version only after the PR is merged.
+0.4.0 adds browser-confirmed connection without a terminal command or login-link copy. See the [release notes](docs/RELEASE_NOTES_0.4.0.md). GitHub `main` provides this version after this PR is merged.
 
 ## Quick start
 
@@ -17,15 +17,15 @@ The repository provides both a Codex marketplace entry and ready-to-run plugin a
    codex plugin add codex-subagent-dsh@codex-subagent-dsh
    ```
 
-2. Make sure DSH is running on a loopback address; the default is `http://127.0.0.1:3080`. Multiple Codex conversations share this one instance.
-3. Open a new Codex conversation and say "check the DSH connection status". Follow the `dsh_status` guidance: start DSH if it is not running; if authentication is required, run the returned connect command in your own terminal and paste the DSH startup login URL only into that terminal. Once the state is `ready`, tasks can be delegated.
-4. (Optional) For per-Session model pinning, install the bundled `dsh-companion` directory into the same DSH profile addressed by `DSH_SUBAGENT_URL`, then restart that profile. The companion ships inside the installed plugin root, so point the command at the installed path — no repository clone or build is needed:
+2. Start the existing local DSH instance (default `http://127.0.0.1:3080`) and sign into its browser UI. Codex conversations share this instance.
+3. Ask Codex to install the bundled `dsh-companion` into that DSH profile. Browser pairing and per-session model selection require the companion; no repository clone or build is needed:
 
    ```bash
    dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
    ```
 
-   Replace the example absolute path with the actual installed path. Ask Codex to locate the plugin root from its loaded Skill path; when authentication is required, the connect command returned by `dsh_status` also identifies it (remove `/runtime/connect.mjs`). Replace `web` with your active profile. After upgrading or removing the Codex cache, rebind the companion to an existing path and restart DSH.
+   Replace `web` with the actual profile. Check for running tasks before restarting the shared instance. Codex can locate the installed directory from its Skill path. Prefer copying the complete companion into a stable, versioned local data directory before installation, retaining the previous version for rollback. If installing directly from the Codex cache, rebind it after cache upgrades or removal.
+4. Open a new Codex conversation and say **“Connect my DSH.”** Compare the matching code in Codex and the confirmation page, click **Allow connection**, then tell Codex to check. A successful API check and credential save returns `ready`. The browser must already be signed into DSH; DSH's own initial login remains necessary, but no login-link copy into Codex is needed.
 5. To pick a model, ask Codex to call `dsh_status` with `includeModels: true`, copy the exact `provider`, `model`, and optional `reasoningEffort` from the returned catalog, then delegate in natural language, for example:
 
    > Delegate this clearly bounded task to DSH using deepseek-official/deepseek-v4-flash (effort low); inspect the full diff and accept the result yourself.
@@ -39,7 +39,7 @@ The repository provides both a Codex marketplace entry and ready-to-run plugin a
 - DSH running on a local loopback address; the default is `http://127.0.0.1:3080`
 - The login URL generated when DSH starts, required for the first local connection
 
-Optional per-Session model pinning requires the bundled DSH companion in the same DSH profile that Codex addresses. The companion ships inside the plugin root installed from the marketplace, so regular users can point at `<installed-plugin-root>/dsh-companion` directly — no repository clone or npm build is needed. Repository developers may use the in-repo path instead:
+Browser pairing and optional per-Session model pinning require the bundled DSH companion in the same DSH profile that Codex addresses. The companion ships inside the plugin root installed from the marketplace, so regular users can point at `<installed-plugin-root>/dsh-companion` directly — no repository clone or npm build is needed. Repository developers may use the in-repo path instead:
 
 ```bash
 dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
@@ -98,31 +98,30 @@ For local development, run `npm ci && npm run build`, then install the repositor
 
 ## First connection
 
-After installing from the marketplace, tell Codex:
+Say **“Connect my DSH”** in Codex. `dsh_status` only inspects state; it never opens a browser.
 
-> Check the DSH connection status.
+- DSH stopped: start the instance at the returned address.
+- Companion missing or outdated: install/update the bundled companion in that profile, then safely restart it.
+- Authentication required: `dsh_connect` with `action: start` opens a confirmation page once. If opening fails, use its returned confirmation URL. Compare the matching code with Codex.
+- After the user confirms: `action: check` claims the credential, verifies it against DSH, and saves it before returning `ready`.
+- Rejected or expired: no automatic retry. `action: cancel` cancels the pending pairing.
 
-Codex calls `dsh_status`:
+Browser pairing supports HTTP on `127.0.0.1`, `localhost`, and `[::1]`, defaulting to `http://127.0.0.1:3080`. HTTPS and reverse-proxy pairing are not supported.
 
-- If DSH is not running, it tells you to start DSH and shows the local address it checked.
-- If DSH is running but not authenticated, it returns a complete connection command containing the actual installed plugin path.
-- If the state is `ready`, tasks can be delegated immediately.
+The user must approve in a browser already signed into DSH. Pairing neither signs in automatically nor approves task permissions. The grant permits access to this DSH instance under its existing execution permission policy. This version reuses the existing browser cookie and its expiry; it is not an independently revocable or task-scoped token. Deleting the local credential does not revoke copies on the server.
 
-For the first authentication, copy the complete command returned by Codex and run it in a local terminal, for example:
+Claim secrets stay in runtime memory and never appear in model output, URLs, or browser pages. Pairings expire after five minutes. Unfinished pairings must be restarted after Codex or its MCP process restarts. Saved credentials remain usable while valid. Never paste login links, tokens, or cookies into chat.
 
-```bash
-node <actual-plugin-root>/runtime/connect.mjs
-```
-
-The plugin resolves the actual directory automatically, so you do not need to run `codex plugin list` and find it manually. When prompted in the terminal, paste the login URL generated by DSH. Do not paste the login URL or token into a Codex conversation, MCP parameters, or project files. The connection entry point handles and stores credentials only on the local machine. When the credentials expire, `dsh_status` returns the connection command again. The plugin does not install, upgrade, or restart DSH.
+Compatibility fallback: without the pairing companion, run the exact `connectCommand` returned by `dsh_status` in your own terminal and paste the DSH login URL there. This command is unnecessary for normal browser pairing. The plugin does not install or restart DSH automatically.
 
 ## Usage
 
-The plugin exposes four tools:
+The plugin exposes five tools:
 
 | Tool | Purpose |
 | --- | --- |
 | `dsh_status` | Distinguishes between DSH not running, authentication required, and ready. With `includeModels: true`, it returns a sanitized provider/model/effort catalog from the companion. |
+| `dsh_connect` | Start, check, or cancel browser pairing; the user confirms in DSH and the runtime handles credentials. |
 | `dsh_submit` | Submits one clearly bounded task and returns a `taskId`. Optional `modelSelection` pins an exact route before the Session's first prompt. Repeating the same request does not submit it again. |
 | `dsh_task` | Reads task state/results or waits for a bounded period. Live permission waits return early; a wait timeout does not cancel the task. |
 | `dsh_cancel` | Requests cancellation of a specific task. An accepted request is not proof that execution stopped, and existing file changes are not rolled back. |
@@ -143,7 +142,7 @@ To select a model, first call `dsh_status` with `includeModels: true`, then copy
 
 - `node` is missing or too old: make sure `node --version` is at least 22.13, then rebuild.
 - DSH is not running: `dsh_status` returns `dsh_not_running`. Start DSH at the returned address, then check the status again.
-- DSH is disconnected or authentication has expired: `dsh_status` returns `authentication_required` and a complete `connectCommand`. Run that command in a local terminal; do not send the login URL to the model.
+- DSH is disconnected or authentication has expired: follow `dsh_status`, check the companion, and use `dsh_connect` for browser pairing. `connectCommand` is a compatibility fallback.
 - `runtime/server.mjs` is missing: run `npm ci && npm run build`.
 - A task reports `waiting_permission`: a correlated live approval request remains undecided. Open the returned sessionId in DSH and check it, then query the original task again. Rejection alone does not fail the task. The plugin never approves for you, and the task deadline continues.
 - A task remains `running`: ordinary user questions and waits without recognizable approval events may still report running. Inspect the session in DSH.

@@ -1,0 +1,3 @@
+- insert:
+    - id: codex-pairing-fixture
+      name: '@aototo/dsh-pairing-fixture'

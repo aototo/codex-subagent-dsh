@@ -76,7 +76,7 @@ function parseStoredCredential(value: unknown, config: BridgeConfig): DshCredent
   return credential;
 }
 
-function isSafeCookieHeader(value: string): boolean {
+export function isSafeCookieHeader(value: string): boolean {
   if (value.length === 0 || value.length > 16_384 || /[\r\n]/.test(value)) return false;
   return value.split('; ').every((pair) => /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+=[\x21-\x3A\x3C-\x7E]+$/.test(pair));
 }
@@ -101,7 +101,8 @@ function cookiesFromResponse(headers: Headers): string {
   return cookie;
 }
 
-async function saveCredential(config: BridgeConfig, credential: DshCredential): Promise<void> {
+export async function saveCredential(config: BridgeConfig, credential: DshCredential): Promise<void> {
+  parseStoredCredential(credential, config);
   const directory = await ensurePrivateDirectories(config);
   const target = credentialPath(config);
   const temporary = join(directory, `.credential-${process.pid}-${randomBytes(8).toString('hex')}.tmp`);
