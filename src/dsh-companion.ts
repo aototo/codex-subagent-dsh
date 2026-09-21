@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
+import { applyPairing } from './pairing-server.js';
 
 export const name = 'codex-session-model-routing';
 export const inject = ['agents', 'sessionController', 'sessions'];
@@ -194,6 +195,7 @@ async function resolveAgent(ctx: Context, sessionId: unknown): Promise<AgentLike
 }
 
 export function apply(ctx: Context): void {
+  applyPairing(ctx);
   const installations = new Map<AgentLike, Installation>();
   const locks = new Map<string, Promise<unknown>>();
   let closed = false;

@@ -83,6 +83,16 @@ async function ensurePrivateDirectories(config) {
   await chmod(directory, 448);
   return directory;
 }
+function parseStoredCredential(value, config) {
+  if (value === null || typeof value !== "object" || value.version !== CREDENTIAL_VERSION || value.origin !== config.origin || typeof value.cookie !== "string" || !Number.isSafeInteger(value.connectedAt) || value.connectedAt < 0) {
+    throw new DshAuthError("CREDENTIAL_INVALID", "Saved DSH credential is invalid; reconnect is required");
+  }
+  const credential = value;
+  if (!isSafeCookieHeader(credential.cookie)) {
+    throw new DshAuthError("CREDENTIAL_INVALID", "Saved DSH credential is invalid; reconnect is required");
+  }
+  return credential;
+}
 function isSafeCookieHeader(value) {
   if (value.length === 0 || value.length > 16384 || /[\r\n]/.test(value)) return false;
   return value.split("; ").every((pair) => /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+=[\x21-\x3A\x3C-\x7E]+$/.test(pair));
@@ -107,6 +117,7 @@ function cookiesFromResponse(headers) {
   return cookie;
 }
 async function saveCredential(config, credential) {
+  parseStoredCredential(credential, config);
   const directory = await ensurePrivateDirectories(config);
   const target = credentialPath(config);
   const temporary = join(directory, `.credential-${process.pid}-${randomBytes(8).toString("hex")}.tmp`);

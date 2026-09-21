@@ -77,8 +77,8 @@ class CompanionHarness {
       this.disposers.push(disposer);
       return disposer;
     },
-    inject: (_dependencies: string[], callback: (ctx: any) => void) => {
-      callback(this.ctx);
+    inject: (dependencies: string[], callback: (ctx: any) => void) => {
+      if (dependencies.every(name => name in this.ctx)) callback(this.ctx);
       return () => {};
     },
     connection: {

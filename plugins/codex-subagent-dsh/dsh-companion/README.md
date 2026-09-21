@@ -49,3 +49,13 @@ before using another package combination.
 当前兼容性门禁覆盖顶层 DSH 0.1.5-rc.1、实际加载的 agent/Session
 Controller/Connection 0.1.5-rc.2 和 Cordis 4.0.2；其他版本组合需先重新运行隔离
 主机探针。
+
+## Browser pairing / 浏览器确认连接
+
+Companion 0.4.0 also provides `/codex-pairing/v1` for browser pairing. Public endpoints expose only protocol capability and bounded temporary pairing state. The confirmation page and decision require the native DSH browser login, with additional same-origin and CSRF checks. A user-confirmed, origin-bound cookie can be claimed once by the initiating runtime. No launch token or signing secret is read.
+
+0.4.0 增加浏览器配对。用户在已登录 DSH 的确认页核对匹配码并允许后，Codex 才能领取一次连接凭证；默认 5 分钟过期。复用已有 Cookie 的权限与有效期，不是独立可撤销的专用 token，也不放宽任务执行权限。
+
+Prefer a stable versioned installation directory outside Codex's disposable plugin cache. Retain the previous companion directory for rollback; install the new path only in the intended DSH profile and restart when no active work would be interrupted. Do not remove a directory while DSH still depends on it.
+
+建议完整复制到 Codex 缓存之外的稳定版本目录再安装，保留旧目录以便回滚；先确认实际 profile 与运行任务，再安全重启。不要删除 DSH 仍引用的目录。

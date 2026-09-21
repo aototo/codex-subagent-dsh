@@ -52,7 +52,7 @@ test('dsh_status distinguishes a stopped DSH from first-time authentication', as
   assert.equal(stopped.dshRunning, false);
 });
 
-test('relocated bundled MCP: authenticate, four tools, correlated result, concurrent cancel and shutdown recovery', async t => {
+test('relocated bundled MCP: authenticate, five tools, correlated result, concurrent cancel and shutdown recovery', async t => {
   const root = await mkdtemp(path.join(tmpdir(), 'dsh-mcp-e2e-'));
   const sessions = new Map<string, { running: boolean; seq: number; ws?: WebSocket; streamId?: string; requestId?: string }>();
   let promptCount = 0;
@@ -125,7 +125,7 @@ test('relocated bundled MCP: authenticate, four tools, correlated result, concur
     return JSON.parse((result.content as any)[0].text);
   };
   const client = await openClient();
-  assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['dsh_cancel', 'dsh_status', 'dsh_submit', 'dsh_task']);
+  assert.deepEqual((await client.listTools()).tools.map(t => t.name).sort(), ['dsh_cancel', 'dsh_connect', 'dsh_status', 'dsh_submit', 'dsh_task']);
   assert.equal((await call(client, 'dsh_status', {})).connected, true);
   const input = { conversationKey: 'mcp-e2e', requestId: 'complete', goal: 'Return MCP_CHAIN_OK without using tools.', cwd: root, mode: 'read', acceptanceCriteria: ['exact marker'] };
   const submitted = await call(client, 'dsh_submit', input);
