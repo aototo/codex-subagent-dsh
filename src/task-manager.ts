@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { BridgeConfig } from './config.js';
+import { ApprovalState } from './approval-state.js';
 import { inspectRecoveryHistory } from './reconcile.js';
 import { discoverableModels, matchesRequestedSelection, modelSelectionFromHeaderEvent, parseModelSelection, validateCapabilities, validateSetResponse } from './model-routing.js';
 import { TaskStore } from './task-store.js';
@@ -14,11 +15,16 @@ const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 const RECOVERY_BUDGET_MS = 10_000;
 const RECOVERY_LIST_MAX_PAGES = 20;
 const RECOVERY_LIST_MAX_RETRIES = 4;
+const APPROVAL_SETTLE_MS = 400;
+const RUNNING_GUIDANCE = 'Execution is running. Handle any DSH questions in DSH; this client does not auto-answer.';
+const APPROVAL_GUIDANCE = 'Waiting for an authorization decision. Open this sessionId in DSH and check its approval request. The task deadline continues; the plugin does not approve or answer for you.';
 interface ActiveRun {
   task: TaskRecord;
   sub?: Subscription;
   timer?: NodeJS.Timeout;
   cancelTimer?: NodeJS.Timeout;
+  approvalTimer?: NodeJS.Timeout;
+  approvals: ApprovalState;
   submitted: boolean;
   seenPrompt: boolean;
   turn?: number;
@@ -77,7 +83,7 @@ export class TaskManager {
       }
       throw error;
     }
-    const ready = { ...base, connected: true, dshRunning: true, state: 'ready', taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: 'conversationKey is logical grouping, not authentication', permissionHandling: 'Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits.' };
+    const ready = { ...base, connected: true, dshRunning: true, state: 'ready', taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: 'conversationKey is logical grouping, not authentication', permissionHandling: 'Live correlated approval events can report waiting_permission. Handle approvals/questions in DSH; user-input waits are not detected. Disconnected tasks remain unknown; no automatic approval or answer.' };
     if (!includeModels) return ready;
     try {
       const capabilities = await this.client.companionRpc('capabilities.get', {});
@@ -144,7 +150,7 @@ export class TaskManager {
     const record: TaskRecord = { taskId: randomUUID(), requestId: input.requestId, conversationKey: input.conversationKey, origin: this.client.origin, inputHash: createHash('sha256').update(stable(input)).digest('hex'), input, cwd: input.cwd, sessionId: 'session-' + randomUUID(), state: 'queued', ownerId: this.ownerId, ownerPid: process.pid, createdAt: now, updatedAt: now, deadlineAt: now + this.config.taskTimeoutMs, attempt: 1 };
     const reserved = this.store.reserve(record);
     if (!reserved.created) return reserved.task;
-    const run: ActiveRun = { task: reserved.task, submitted: false, seenPrompt: false, lastSeq: -1, result: '', finishing: false };
+    const run: ActiveRun = { task: reserved.task, submitted: false, seenPrompt: false, lastSeq: -1, result: '', finishing: false, approvals: new ApprovalState() };
     this.active.set(record.taskId, run);
     run.timer = setTimeout(() => { void this.cancel(record.conversationKey, record.taskId).catch(() => this.uncertain(run, 'TIMEOUT_CANCEL_FAILED')); }, Math.max(1, record.deadlineAt - Date.now()));
     // Ownership is durable before this asynchronous dispatch can contact DSH.
@@ -165,6 +171,7 @@ export class TaskManager {
   private cleanup(run: ActiveRun) {
     this.active.delete(run.task.taskId);
     clearTimeout(run.timer); clearTimeout(run.cancelTimer);
+    clearTimeout(run.approvalTimer); run.approvals.clear();
     run.sub?.close();
   }
   private uncertain(run: ActiveRun, error: string) {
@@ -225,7 +232,7 @@ export class TaskManager {
       const sub = await this.client.follow(run.task.sessionId, {
         snapshot: snapshot => {
           if (snapshot.header.id !== run.task.sessionId || snapshot.records?.some(r => r.event?.type === 'turn/start')) { this.uncertain(run, 'SESSION_ALREADY_USED'); return; }
-          run.lastSeq = snapshot.projections?.asOfSeq ?? -1;
+          run.lastSeq = snapshot.cursor ?? snapshot.projections?.asOfSeq ?? -1;
         },
         event: event => this.onEvent(run, event),
         error: () => this.uncertain(run, 'EVENT_CONNECTION_FAILED'),
@@ -264,14 +271,32 @@ export class TaskManager {
 
   private onEvent(run: ActiveRun, event: WireEvent) {
     if (!this.active.has(run.task.taskId) || event.seq <= run.lastSeq) return;
-    if (this.current(run).state === 'unknown') { this.cleanup(run); return; }
+    const current = this.current(run);
+    if (current.state === 'unknown' || terminal(current)) { this.cleanup(run); return; }
+    if (event.seq !== run.lastSeq + 1) { this.uncertain(run, 'EVENT_SEQUENCE_GAP'); return; }
     run.lastSeq = event.seq;
     if (run.finishing) {
-      if (['turn/start', 'user/message', 'assistant/message', 'turn/end'].includes(event.type)) this.uncertain(run, 'EVENT_AFTER_TERMINAL');
+      if (['turn/start', 'user/message', 'assistant/message', 'turn/end', 'approval/asked', 'approval/decided'].includes(event.type)) this.uncertain(run, 'EVENT_AFTER_TERMINAL');
       return;
     }
     const d = event.data;
-    if (event.type === 'request/header') {
+    if (event.type === 'approval/asked' || event.type === 'approval/decided') {
+      if (!run.seenPrompt || run.turn === undefined || !run.approvals.accept(event)) {
+        this.uncertain(run, 'APPROVAL_EVIDENCE_INVALID'); return;
+      }
+      if (run.approvals.pending === 0) {
+        clearTimeout(run.approvalTimer); run.approvalTimer = undefined;
+        // State predicates are checked inside the store transaction, including
+        // cancellation requested by another MCP process.
+        run.task = this.store.update(run.task.taskId, { state: 'running', guidance: RUNNING_GUIDANCE, lastSeq: event.seq }, ['waiting_permission']);
+      } else if (current.state === 'running' && run.approvalTimer === undefined) {
+        run.approvalTimer = setTimeout(() => {
+          run.approvalTimer = undefined;
+          if (!this.active.has(run.task.taskId) || run.finishing || run.approvals.pending === 0) return;
+          run.task = this.store.update(run.task.taskId, { state: 'waiting_permission', guidance: APPROVAL_GUIDANCE, lastSeq: run.lastSeq }, ['running']);
+        }, APPROVAL_SETTLE_MS);
+      }
+    } else if (event.type === 'request/header') {
       const actualModel = modelSelectionFromHeaderEvent(event);
       const requested = run.task.input.modelSelection;
       if (requested === undefined) return;
@@ -282,9 +307,9 @@ export class TaskManager {
       }
       this.update(run, { actualModel, actualModelSeq: event.seq, lastSeq: event.seq });
     } else if (event.type === 'turn/start') {
-      if (!run.submitted || (run.turn !== undefined && run.turn !== d.turn)) { this.uncertain(run, 'UNEXPECTED_TURN'); return; }
+      if (!run.submitted || run.turn !== undefined || !Number.isSafeInteger(d?.turn)) { this.uncertain(run, 'UNEXPECTED_TURN'); return; }
       run.turn = d.turn;
-      this.update(run, { state: this.current(run).state === 'cancel_requested' ? 'cancel_requested' : 'running', turn: d.turn, lastSeq: event.seq, guidance: 'If DSH is awaiting approval or input, handle it in DSH; this client does not auto-answer.' });
+      this.update(run, { state: this.current(run).state === 'cancel_requested' ? 'cancel_requested' : 'running', turn: d.turn, lastSeq: event.seq, guidance: RUNNING_GUIDANCE });
     } else if (event.type === 'user/message' && d.source?.kind === 'user') {
       if (d.source.rpcId !== run.task.taskId) { this.uncertain(run, 'UNEXPECTED_USER_MESSAGE'); return; }
       run.seenPrompt = true;
@@ -293,6 +318,8 @@ export class TaskManager {
       if (text) run.result = text.slice(0, 64 * 1024);
     } else if (event.type === 'turn/end') {
       if (run.turn === undefined || d.turn !== run.turn) { this.uncertain(run, 'TERMINAL_TURN_MISMATCH'); return; }
+      if (run.approvals.pending > 0) { this.uncertain(run, 'APPROVAL_UNRESOLVED_AT_TERMINAL'); return; }
+      clearTimeout(run.approvalTimer); run.approvalTimer = undefined;
       run.finishing = true;
       void this.finish(run, d.reason?.kind, event.seq);
     }
@@ -502,7 +529,7 @@ export class TaskManager {
     do {
       this.store.markOrphans();
       const task = this.store.get(this.client.origin, conversationKey, taskId);
-      if (terminal(task) || signal?.aborted) return task;
+      if (terminal(task) || task.state === 'waiting_permission' || signal?.aborted) return task;
       if (task.state === 'unknown') {
         return await this.recover(task, Math.min(operationDeadline, Date.now() + RECOVERY_BUDGET_MS), signal);
       }

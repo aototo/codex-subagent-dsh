@@ -37,6 +37,11 @@
 
 ## DSH 协议边界
 
+等待授权增量已在 DSH、`dsh-user-approval`、`dsh-api-session-controller`
+`0.1.5-rc.2` 的隔离主机验证真实审计事件和 bundled MCP 链路。在线连续事件可报告
+`waiting_permission`；不依赖新增 companion 接口，也不恢复断线后的活跃等待。
+浏览器人工验收及发布状态见[授权验证记录](APPROVAL_WAIT_VERIFICATION.md)。
+
 当前实现面向已实测的 DSH Web 协议：斜线路径 RPC（例如 `/api/session/create`）、`payload.args.request` 参数包装，以及 `/api/remote.mux` 上的 `session/follow`。首次连接需要 DSH 启动登录链接，并通过本地入口换取 Cookie；只配置地址不足以完成认证。
 
 凭证失效时必须重新连接。插件不读取浏览器 Cookie或服务端签名密钥，不自动重启 DSH，也不会自动重发结果未知的任务。

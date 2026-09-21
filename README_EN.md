@@ -6,6 +6,8 @@
 
 The repository provides both a Codex marketplace entry and ready-to-run plugin artifacts. Real DSH text tasks, file reads, and changes in isolated worktrees have passed validation. A read-only task invoked directly from a new Codex desktop conversation has also passed. Closing a window and quitting the entire app normally have been tested: DSH can continue running while the plugin initially preserves the task as `unknown`. After reopening Codex, the original `taskId` and `conversationKey` can be passed to `dsh_task` to recover the terminal state and result when complete evidence is available. Crash recovery has not yet been tested.
 
+0.3.0 adds permission-wait detection; see the [release notes](docs/RELEASE_NOTES_0.3.0.md). GitHub `main` provides this version only after the PR is merged.
+
 ## Quick start
 
 1. Install the plugin from the GitHub marketplace. The repository ships ready-to-run artifacts, so no clone or npm build is needed:
@@ -122,7 +124,7 @@ The plugin exposes four tools:
 | --- | --- |
 | `dsh_status` | Distinguishes between DSH not running, authentication required, and ready. With `includeModels: true`, it returns a sanitized provider/model/effort catalog from the companion. |
 | `dsh_submit` | Submits one clearly bounded task and returns a `taskId`. Optional `modelSelection` pins an exact route before the Session's first prompt. Repeating the same request does not submit it again. |
-| `dsh_task` | Reads a specific task's state and result, or waits for a bounded period. A wait timeout does not cancel the task. |
+| `dsh_task` | Reads task state/results or waits for a bounded period. Live permission waits return early; a wait timeout does not cancel the task. |
 | `dsh_cancel` | Requests cancellation of a specific task. An accepted request is not proof that execution stopped, and existing file changes are not rolled back. |
 
 In normal use, tell Codex:
@@ -143,7 +145,8 @@ To select a model, first call `dsh_status` with `includeModels: true`, then copy
 - DSH is not running: `dsh_status` returns `dsh_not_running`. Start DSH at the returned address, then check the status again.
 - DSH is disconnected or authentication has expired: `dsh_status` returns `authentication_required` and a complete `connectCommand`. Run that command in a local terminal; do not send the login URL to the model.
 - `runtime/server.mjs` is missing: run `npm ci && npm run build`.
-- A task remains `running` for a long time: the current version cannot reliably detect whether DSH is waiting for permission or user input, so the state may remain `running`. Open DSH and handle the pending request there. The plugin does not grant permission or answer questions on the user's behalf.
+- A task reports `waiting_permission`: a correlated live approval request remains undecided. Open the returned sessionId in DSH and check it, then query the original task again. Rejection alone does not fail the task. The plugin never approves for you, and the task deadline continues.
+- A task remains `running`: ordinary user questions and waits without recognizable approval events may still report running. Inspect the session in DSH.
 - A task is `unknown`: call `dsh_task` again with the original `taskId` and `conversationKey`. The plugin performs a bounded read of the original session to look for a provable terminal state. It does not create or resubmit the task. If evidence remains insufficient, inspect DSH and the workspace; a write-task reservation is not released early.
 - A cancelled task remains `cancel_requested`: this only proves that the cancellation request was sent. Wait for a confirmed terminal state. Existing file changes are not reverted automatically.
 - Codex cannot find the tools: confirm that the plugin is installed and enabled, and open a new conversation after an update. Then verify the built artifacts and manifest; see `docs/COMPATIBILITY.md`.
@@ -155,7 +158,8 @@ To select a model, first call `dsh_status` with `includeModels: true`, then copy
 - Installation from the GitHub marketplace has been validated with an isolated Codex configuration, but Git-source update and uninstall regression tests are not yet complete. Tool discovery and a read-only task from a new conversation using a local marketplace have been validated. Closing the test window, quitting the entire app normally, and reopening it have been validated. Crash behavior has not been tested.
 - Each task uses a separate DSH session. Continuing the original session for rework and listing tasks are not supported. Query-time recovery of a proven terminal state and result is supported; background automatic recovery and takeover of running tasks are not.
 - After the Codex or MCP process exits, the plugin does not guarantee continued timeout tracking, automatic cancellation, or waking the conversation.
-- The plugin cannot reliably distinguish normal execution from DSH waiting for permission or user input. The task may remain `running` while waiting.
+- Permission-wait detection requires a live, continuous event stream correlated to this task. A 400ms settling window suppresses immediate decisions; it does not prove a browser approval dialog is visible. Ordinary user-input waits are not detected. Old requests after disconnect/restart do not establish a live wait, and closing Codex does not guarantee notifications.
+- See the [approval verification record](docs/APPROVAL_WAIT_VERIFICATION.md) for isolated checks and the browser acceptance status.
 - When the terminal state cannot be proven, the plugin returns `unknown` and does not automatically resubmit. Query-time recovery requires a complete, continuous history, the original task association, and consistent idle and empty-queue evidence. If DSH returns a truncated history snapshot, this version does not fetch additional pages. Results larger than the 65,536-character limit or snapshots larger than the transport limit also remain `unknown`.
 - Only loopback addresses are allowed. DSH running on another machine is not supported.
 - This is a community MCP plugin that lets Codex call an external DSH instance. It is not a native Codex subagent backend.
@@ -164,10 +168,16 @@ See the [compatibility notes](docs/COMPATIBILITY.md) for versions and reference 
 
 ## Development verification
 
-`npm run check` performs type checking, builds the distributable artifacts, and runs 74 automated tests. The isolated probe below also boots a temporary DSH profile, installs the companion and a synthetic adapter, and proves authentication, two concurrently pinned Sessions, an unaffected default Session, cold-restart recovery, real request headers, and the bundled MCP `dsh_submit`→`dsh_task` path:
+`npm run check` performs type checking, builds the distributable artifacts, and runs automated tests. The isolated probe below also boots a temporary DSH profile, installs the companion and a synthetic adapter, and proves authentication, two concurrently pinned Sessions, an unaffected default Session, cold-restart recovery, real request headers, and the bundled MCP `dsh_submit`→`dsh_task` path:
 
 ```bash
 DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-companion.mjs
+```
+
+Approval events and the bundled MCP wait state have a separate isolated probe:
+
+```bash
+DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-approval.mjs
 ```
 
 The synthetic adapter proves the routing mechanism. It does not prove availability of any external provider or commercial model in the user's configuration.

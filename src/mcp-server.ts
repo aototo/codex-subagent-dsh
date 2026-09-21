@@ -11,7 +11,7 @@ import type { TaskRecord } from './types.js';
 const config = loadConfig();
 const store = new TaskStore(config.stateDir);
 const manager = new TaskManager(config, new DshClient(config), store);
-const server = new McpServer({ name: 'codex-subagent-dsh', version: '0.2.0' });
+const server = new McpServer({ name: 'codex-subagent-dsh', version: '0.3.0' });
 const connectCommand = `node ${JSON.stringify(fileURLToPath(new URL('./connect.mjs', import.meta.url)))}`;
 const key = z.string().min(1).max(128);
 const scope = { conversationKey: key, taskId: z.string().uuid() };
@@ -46,7 +46,7 @@ server.registerTool('dsh_submit', {
   inputSchema: { conversationKey: key, requestId: key, goal: z.string().min(1).max(16000), context: z.string().max(32000).optional(), cwd: z.string().min(1).max(4096), mode: z.enum(['read', 'write']), allowedPaths: z.array(z.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: z.array(z.string().min(1).max(2000)).min(1).max(30), baselineCommit: z.string().regex(/^[a-fA-F0-9]{40}$/).optional(), modelSelection: z.object({ provider: z.string().min(1).max(256), model: z.string().min(1).max(256), reasoningEffort: z.string().min(1).max(256).optional() }).strict().optional() },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
 }, input => guarded(async () => view(await manager.submit(input))));
-server.registerTool('dsh_task', { description: 'Read or boundedly wait for a scoped DSH task; waitMs is at most 20 seconds. Unknown tasks receive a bounded read-only check of the original session for a provable terminal state/result. Running or incomplete evidence stays unknown and retains workspace reservations. Never auto-resubmit; verify results independently.', inputSchema: { ...scope, waitMs: z.number().int().min(0).max(config.maxWaitMs).default(0) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input, extra) => guarded(async () => view(await manager.task(input.conversationKey, input.taskId, input.waitMs, extra.signal))));
+server.registerTool('dsh_task', { description: 'Read or boundedly wait for a scoped DSH task; waitMs is at most 20 seconds. Returns early for live waiting_permission: direct the user to this sessionId in DSH; do not approve or poll repeatedly while user action is pending. The task deadline continues. Unknown tasks receive a bounded read-only check of the original session for a provable terminal state/result. Running or incomplete evidence stays unknown and retains workspace reservations. Never auto-resubmit; verify results independently.', inputSchema: { ...scope, waitMs: z.number().int().min(0).max(config.maxWaitMs).default(0) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input, extra) => guarded(async () => view(await manager.task(input.conversationKey, input.taskId, input.waitMs, extra.signal))));
 server.registerTool('dsh_cancel', { description: 'Request cancellation of the matching scoped task. Acceptance of a cancel request is not proof of termination; inspect returned state. Cancellation does not roll back changes.', inputSchema: scope, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, input => guarded(async () => view(await manager.cancel(input.conversationKey, input.taskId))));
 
 let closing = false;
