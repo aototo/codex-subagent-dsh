@@ -1,4 +1,5 @@
 import { matchesRequestedSelection, modelSelectionFromHeaderEvent } from './model-routing.js';
+import { ApprovalState } from './approval-state.js';
 import type { ModelSelection, SessionSnapshot, TaskRecord, WireEvent } from './types.js';
 
 export const RECOVERY_MAX_RESULT_CHARS = 64 * 1024;
@@ -44,11 +45,19 @@ export function inspectRecoveryHistory(task: TaskRecord, snapshot: SessionSnapsh
   let actualModel: ModelSelection | undefined;
   let actualModelSeq: number | undefined;
   const requestedModel = task.input?.modelSelection;
+  const approvals = new ApprovalState();
 
   for (let index = 0; index < snapshot.records.length; index++) {
     const record = snapshot.records[index];
     const event = record?.event;
     if (record?.type !== 'event' || event?.seq !== index) return invalid('RECOVERY_HISTORY_GAPPED');
+
+    if (event.type === 'approval/asked' || event.type === 'approval/decided') {
+      if (turn === undefined || promptSeq === undefined || terminal !== undefined || !approvals.accept(event)) {
+        return invalid('RECOVERY_APPROVAL_EVIDENCE_INVALID');
+      }
+      continue;
+    }
 
     if (event.type === 'turn/start') {
       if (turn !== undefined || terminal !== undefined || !Number.isSafeInteger(event.data?.turn)) {
@@ -103,6 +112,7 @@ export function inspectRecoveryHistory(task: TaskRecord, snapshot: SessionSnapsh
     }
 
     if (event.type === 'turn/end') {
+      if (approvals.pending > 0) return invalid('RECOVERY_APPROVAL_UNRESOLVED');
       if (
         turn === undefined ||
         promptSeq === undefined ||

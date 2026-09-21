@@ -6,6 +6,8 @@
 
 仓库同时提供 Codex marketplace 入口和可直接运行的插件产物。真实 DSH 文本、文件读取和隔离 worktree 修改均已通过；新桌面对话直接调用插件的只读任务也已通过。关闭窗口和整个应用正常退出均已验证：DSH 可继续执行，插件先保留 unknown。重开后可用原 taskId 和 conversationKey 调用 dsh_task，按完整证据恢复终态与结果；崩溃场景仍待验证。
 
+0.3.0 新增等待授权识别，详情见[发布说明](docs/RELEASE_NOTES_0.3.0.md)。该版本须在 PR 合并后才会由 GitHub `main` 提供。
+
 ## 快速开始
 
 1. 从 GitHub marketplace 安装插件（仓库已提交可运行产物，不需要克隆或 npm 构建）：
@@ -122,7 +124,7 @@ node <实际插件根目录>/runtime/connect.mjs
 | --- | --- |
 | `dsh_status` | 区分 DSH 未启动、需要认证和已就绪；`includeModels: true` 会通过 companion 返回净化后的 provider/model/effort 目录 |
 | `dsh_submit` | 提交一个边界明确的任务，返回 taskId；可选 `modelSelection` 在首个 prompt 前固定该 Session 的精确 route；相同请求不会重复派发 |
-| `dsh_task` | 查询指定任务的状态、结果，或进行有界等待；等待超时不取消任务 |
+| `dsh_task` | 查询指定任务的状态、结果，或进行有界等待；检测到等待授权结果时提前返回，等待超时不取消任务 |
 | `dsh_cancel` | 请求取消指定任务；请求被接受不等于已停止，也不回滚文件修改 |
 
 通常直接告诉 Codex：
@@ -143,7 +145,8 @@ node <实际插件根目录>/runtime/connect.mjs
 - DSH 未启动：`dsh_status` 返回 `dsh_not_running`；先启动返回地址对应的 DSH，再检查状态。
 - 未连接或认证失效：`dsh_status` 返回 `authentication_required` 和完整 `connectCommand`；在本地终端运行该命令，不要把登录链接发给模型。
 - `runtime/server.mjs` 不存在：运行 `npm ci && npm run build`。
-- 任务长时间保持 `running`：当前版本无法可靠识别 DSH 是否正在等待权限或用户输入，状态可能继续显示 `running`。请到 DSH 查看并处理对应请求；插件不会代替用户授权或回答。
+- 任务为 `waiting_permission`：插件从连续事件中观察到仍未决定的授权申请；请按返回的 sessionId 打开 DSH 会话检查。处理后继续查询原任务，授权拒绝本身不等于任务失败。插件不会代替用户授权，原任务超时仍继续计时。
+- 任务长时间保持 `running`：普通用户提问及缺少可识别授权事件的等待仍可能显示 running，请到 DSH 检查。
 - 任务为 `unknown`：使用原 taskId 和 conversationKey 再调用 `dsh_task`，插件会有界读取原会话核对终态；不会创建或重派任务。证据不足时仍保持 unknown，请到 DSH 和工作区核对，写任务占用不会提前释放。
 - 取消后仍显示 `cancel_requested`：这只表示停止请求已发送，必须等到可确认的终止状态；已产生的文件修改不会自动恢复。
 - Codex 找不到工具：确认插件已安装并启用，更新后开启新对话加载工具；再核对构建产物和清单，参见 `docs/COMPATIBILITY.md`。
@@ -155,7 +158,8 @@ node <实际插件根目录>/runtime/connect.mjs
 - GitHub marketplace 的隔离配置安装已验证，Git 来源的更新与卸载回归尚未完成；本地 marketplace 中的新对话工具发现和只读任务已验证，关闭测试窗口的生命周期边界已验证；整个应用正常退出并重开已验证；崩溃尚未验证。
 - 每个任务使用独立 DSH Session；不支持继续原会话返工或任务列表。支持查询时按需恢复已证实的终态与结果，不支持后台自动恢复或运行中任务接管。
 - Codex/MCP 进程退出后，插件不保证继续计时、自动取消或唤醒对话。
-- 插件无法可靠区分正常执行与等待 DSH 权限或用户输入；等待期间任务可能一直显示 `running`。
+- 授权等待识别只适用于在线、连续且关联到本任务的事件；400ms 合并窗口用于抑制即时决定，不保证浏览器已显示人工审批框。普通用户输入等待不识别，断线或重启后的旧申请不会被还原成当前等待。关闭 Codex 后不保证主动提醒。
+- 等待授权功能的隔离服务与自动化验证见[验证记录](docs/APPROVAL_WAIT_VERIFICATION.md)；浏览器人工审批验收状态以该记录为准。
 - 无法确认终态时返回 `unknown`，不会自动重发。按需恢复要求完整连续历史、原任务关联和一致的空闲/空队列证据；DSH 返回的历史快照若已截断，本版本不会分页补齐。恢复结果超过 65,536 个字符上限或快照超过传输大小上限时，也会保留 unknown。
 - 仅允许回环地址；不支持跨机器 DSH。
 - 这是 Codex 调用外部 DSH 的社区 MCP 插件，不是 Codex 原生子 Agent 后端。
@@ -164,10 +168,16 @@ node <实际插件根目录>/runtime/connect.mjs
 
 ## 开发验证
 
-`npm run check` 执行类型检查、可分发构建与 74 项自动化测试。以下隔离探针还会启动临时 DSH profile、安装 companion 与 synthetic adapter、验证鉴权、双 Session 隔离、默认 Session 不受影响、冷重启恢复、真实 request header，以及 bundled MCP 的 `dsh_submit`→`dsh_task` 完整链路：
+`npm run check` 执行类型检查、可分发构建与自动化测试。以下隔离探针还会启动临时 DSH profile、安装 companion 与 synthetic adapter、验证鉴权、双 Session 隔离、默认 Session 不受影响、冷重启恢复、真实 request header，以及 bundled MCP 的 `dsh_submit`→`dsh_task` 完整链路：
 
 ```bash
 DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-companion.mjs
+```
+
+授权事件与 bundled MCP 状态链路使用另一隔离探针验证：
+
+```bash
+DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-approval.mjs
 ```
 
 synthetic adapter 只证明路由机制，不证明某个外部 provider 或商业模型在当前用户配置中可用。

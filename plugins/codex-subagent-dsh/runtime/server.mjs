@@ -3261,10 +3261,10 @@ var require_utils = __commonJS({
         isIPV6: true
       };
     }
-    function findToken(str, token) {
+    function findToken(str, token2) {
       let ind = 0;
       for (let i = 0; i < str.length; i++) {
-        if (str[i] === token) ind++;
+        if (str[i] === token2) ind++;
       }
       return ind;
     }
@@ -9401,16 +9401,16 @@ var require_extension = __commonJS({
         throw new SyntaxError("Unexpected end of input");
       }
       if (end === -1) end = i;
-      const token = header.slice(start, end);
+      const token2 = header.slice(start, end);
       if (extensionName === void 0) {
-        push(offers, token, params);
+        push(offers, token2, params);
       } else {
         if (paramName === void 0) {
-          push(params, token, true);
+          push(params, token2, true);
         } else if (mustUnescape) {
-          push(params, paramName, token.replace(/\\/g, ""));
+          push(params, paramName, token2.replace(/\\/g, ""));
         } else {
-          push(params, paramName, token);
+          push(params, paramName, token2);
         }
         push(offers, extensionName, params);
       }
@@ -17624,9 +17624,9 @@ var $ZodIBAN = /* @__PURE__ */ $constructor("$ZodIBAN", (inst, def) => {
     });
   };
 });
-function isValidJWT2(token, algorithm = null) {
+function isValidJWT2(token2, algorithm = null) {
   try {
-    const tokensParts = token.split(".");
+    const tokensParts = token2.split(".");
     if (tokensParts.length !== 3)
       return false;
     const [header] = tokensParts;
@@ -40969,6 +40969,38 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+// src/approval-state.ts
+var outcomes = /* @__PURE__ */ new Set(["allowed-once", "rejected", "cancelled", "unavailable"]);
+var token = (value) => typeof value === "string" && value.length > 0 && value.length <= 256;
+var ApprovalState = class {
+  requests = /* @__PURE__ */ new Map();
+  pending = 0;
+  accept(event) {
+    const d = event.data;
+    if (!d || typeof d !== "object" || !token(d.id)) return false;
+    const previous = this.requests.get(d.id);
+    if (event.type === "approval/asked") {
+      if (!token(d.toolName) || d.callId !== void 0 && !token(d.callId)) return false;
+      if (previous !== void 0) {
+        return previous.outcome === void 0 && previous.toolName === d.toolName && previous.callId === d.callId;
+      }
+      if (this.requests.size >= 1024) return false;
+      this.requests.set(d.id, { toolName: d.toolName, callId: d.callId });
+      this.pending++;
+      return true;
+    }
+    if (event.type !== "approval/decided" || !outcomes.has(d.outcome) || previous === void 0) return false;
+    if (previous.outcome !== void 0) return previous.outcome === d.outcome;
+    previous.outcome = d.outcome;
+    this.pending--;
+    return true;
+  }
+  clear() {
+    this.requests.clear();
+    this.pending = 0;
+  }
+};
+
 // src/model-routing.ts
 var MODEL_ROUTING_PROTOCOL = 1;
 function record2(value) {
@@ -41075,10 +41107,17 @@ function inspectRecoveryHistory(task, snapshot) {
   let actualModel;
   let actualModelSeq;
   const requestedModel = task.input?.modelSelection;
+  const approvals = new ApprovalState();
   for (let index = 0; index < snapshot.records.length; index++) {
     const record3 = snapshot.records[index];
     const event = record3?.event;
     if (record3?.type !== "event" || event?.seq !== index) return invalid("RECOVERY_HISTORY_GAPPED");
+    if (event.type === "approval/asked" || event.type === "approval/decided") {
+      if (turn === void 0 || promptSeq === void 0 || terminal2 !== void 0 || !approvals.accept(event)) {
+        return invalid("RECOVERY_APPROVAL_EVIDENCE_INVALID");
+      }
+      continue;
+    }
     if (event.type === "turn/start") {
       if (turn !== void 0 || terminal2 !== void 0 || !Number.isSafeInteger(event.data?.turn)) {
         return invalid("RECOVERY_FOREIGN_TURN");
@@ -41122,6 +41161,7 @@ function inspectRecoveryHistory(task, snapshot) {
       continue;
     }
     if (event.type === "turn/end") {
+      if (approvals.pending > 0) return invalid("RECOVERY_APPROVAL_UNRESOLVED");
       if (turn === void 0 || promptSeq === void 0 || terminal2 !== void 0 || event.data?.turn !== turn || event.seq !== snapshot.cursor) {
         return invalid("RECOVERY_TERMINAL_MISMATCH");
       }
@@ -41164,6 +41204,9 @@ var pause = (ms) => new Promise((resolve3) => setTimeout(resolve3, ms));
 var RECOVERY_BUDGET_MS = 1e4;
 var RECOVERY_LIST_MAX_PAGES = 20;
 var RECOVERY_LIST_MAX_RETRIES = 4;
+var APPROVAL_SETTLE_MS = 400;
+var RUNNING_GUIDANCE = "Execution is running. Handle any DSH questions in DSH; this client does not auto-answer.";
+var APPROVAL_GUIDANCE = "Waiting for an authorization decision. Open this sessionId in DSH and check its approval request. The task deadline continues; the plugin does not approve or answer for you.";
 var terminal = (task) => TERMINAL_STATES.includes(task.state);
 function stable(value) {
   if (Array.isArray(value)) return "[" + value.map(stable).join(",") + "]";
@@ -41220,7 +41263,7 @@ var TaskManager = class {
       }
       throw error62;
     }
-    const ready = { ...base, connected: true, dshRunning: true, state: "ready", taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: "conversationKey is logical grouping, not authentication", permissionHandling: "Handle DSH approval/questions in DSH. This version does not automatically answer or reliably detect all waits." };
+    const ready = { ...base, connected: true, dshRunning: true, state: "ready", taskTimeoutMs: this.config.taskTimeoutMs, maxWaitMs: this.config.maxWaitMs, scope: "conversationKey is logical grouping, not authentication", permissionHandling: "Live correlated approval events can report waiting_permission. Handle approvals/questions in DSH; user-input waits are not detected. Disconnected tasks remain unknown; no automatic approval or answer." };
     if (!includeModels) return ready;
     try {
       const capabilities = await this.client.companionRpc("capabilities.get", {});
@@ -41282,7 +41325,7 @@ var TaskManager = class {
     const record3 = { taskId: randomUUID2(), requestId: input2.requestId, conversationKey: input2.conversationKey, origin: this.client.origin, inputHash: createHash2("sha256").update(stable(input2)).digest("hex"), input: input2, cwd: input2.cwd, sessionId: "session-" + randomUUID2(), state: "queued", ownerId: this.ownerId, ownerPid: process.pid, createdAt: now, updatedAt: now, deadlineAt: now + this.config.taskTimeoutMs, attempt: 1 };
     const reserved = this.store.reserve(record3);
     if (!reserved.created) return reserved.task;
-    const run = { task: reserved.task, submitted: false, seenPrompt: false, lastSeq: -1, result: "", finishing: false };
+    const run = { task: reserved.task, submitted: false, seenPrompt: false, lastSeq: -1, result: "", finishing: false, approvals: new ApprovalState() };
     this.active.set(record3.taskId, run);
     run.timer = setTimeout(() => {
       void this.cancel(record3.conversationKey, record3.taskId).catch(() => this.uncertain(run, "TIMEOUT_CANCEL_FAILED"));
@@ -41309,6 +41352,8 @@ var TaskManager = class {
     this.active.delete(run.task.taskId);
     clearTimeout(run.timer);
     clearTimeout(run.cancelTimer);
+    clearTimeout(run.approvalTimer);
+    run.approvals.clear();
     run.sub?.close();
   }
   uncertain(run, error62) {
@@ -41371,7 +41416,7 @@ var TaskManager = class {
             this.uncertain(run, "SESSION_ALREADY_USED");
             return;
           }
-          run.lastSeq = snapshot.projections?.asOfSeq ?? -1;
+          run.lastSeq = snapshot.cursor ?? snapshot.projections?.asOfSeq ?? -1;
         },
         event: (event) => this.onEvent(run, event),
         error: () => this.uncertain(run, "EVENT_CONNECTION_FAILED"),
@@ -41414,17 +41459,38 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
   }
   onEvent(run, event) {
     if (!this.active.has(run.task.taskId) || event.seq <= run.lastSeq) return;
-    if (this.current(run).state === "unknown") {
+    const current = this.current(run);
+    if (current.state === "unknown" || terminal(current)) {
       this.cleanup(run);
+      return;
+    }
+    if (event.seq !== run.lastSeq + 1) {
+      this.uncertain(run, "EVENT_SEQUENCE_GAP");
       return;
     }
     run.lastSeq = event.seq;
     if (run.finishing) {
-      if (["turn/start", "user/message", "assistant/message", "turn/end"].includes(event.type)) this.uncertain(run, "EVENT_AFTER_TERMINAL");
+      if (["turn/start", "user/message", "assistant/message", "turn/end", "approval/asked", "approval/decided"].includes(event.type)) this.uncertain(run, "EVENT_AFTER_TERMINAL");
       return;
     }
     const d = event.data;
-    if (event.type === "request/header") {
+    if (event.type === "approval/asked" || event.type === "approval/decided") {
+      if (!run.seenPrompt || run.turn === void 0 || !run.approvals.accept(event)) {
+        this.uncertain(run, "APPROVAL_EVIDENCE_INVALID");
+        return;
+      }
+      if (run.approvals.pending === 0) {
+        clearTimeout(run.approvalTimer);
+        run.approvalTimer = void 0;
+        run.task = this.store.update(run.task.taskId, { state: "running", guidance: RUNNING_GUIDANCE, lastSeq: event.seq }, ["waiting_permission"]);
+      } else if (current.state === "running" && run.approvalTimer === void 0) {
+        run.approvalTimer = setTimeout(() => {
+          run.approvalTimer = void 0;
+          if (!this.active.has(run.task.taskId) || run.finishing || run.approvals.pending === 0) return;
+          run.task = this.store.update(run.task.taskId, { state: "waiting_permission", guidance: APPROVAL_GUIDANCE, lastSeq: run.lastSeq }, ["running"]);
+        }, APPROVAL_SETTLE_MS);
+      }
+    } else if (event.type === "request/header") {
       const actualModel = modelSelectionFromHeaderEvent(event);
       const requested = run.task.input.modelSelection;
       if (requested === void 0) return;
@@ -41435,12 +41501,12 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
       }
       this.update(run, { actualModel, actualModelSeq: event.seq, lastSeq: event.seq });
     } else if (event.type === "turn/start") {
-      if (!run.submitted || run.turn !== void 0 && run.turn !== d.turn) {
+      if (!run.submitted || run.turn !== void 0 || !Number.isSafeInteger(d?.turn)) {
         this.uncertain(run, "UNEXPECTED_TURN");
         return;
       }
       run.turn = d.turn;
-      this.update(run, { state: this.current(run).state === "cancel_requested" ? "cancel_requested" : "running", turn: d.turn, lastSeq: event.seq, guidance: "If DSH is awaiting approval or input, handle it in DSH; this client does not auto-answer." });
+      this.update(run, { state: this.current(run).state === "cancel_requested" ? "cancel_requested" : "running", turn: d.turn, lastSeq: event.seq, guidance: RUNNING_GUIDANCE });
     } else if (event.type === "user/message" && d.source?.kind === "user") {
       if (d.source.rpcId !== run.task.taskId) {
         this.uncertain(run, "UNEXPECTED_USER_MESSAGE");
@@ -41455,6 +41521,12 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
         this.uncertain(run, "TERMINAL_TURN_MISMATCH");
         return;
       }
+      if (run.approvals.pending > 0) {
+        this.uncertain(run, "APPROVAL_UNRESOLVED_AT_TERMINAL");
+        return;
+      }
+      clearTimeout(run.approvalTimer);
+      run.approvalTimer = void 0;
       run.finishing = true;
       void this.finish(run, d.reason?.kind, event.seq);
     }
@@ -41655,7 +41727,7 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
     do {
       this.store.markOrphans();
       const task = this.store.get(this.client.origin, conversationKey, taskId);
-      if (terminal(task) || signal?.aborted) return task;
+      if (terminal(task) || task.state === "waiting_permission" || signal?.aborted) return task;
       if (task.state === "unknown") {
         return await this.recover(task, Math.min(operationDeadline, Date.now() + RECOVERY_BUDGET_MS), signal);
       }
@@ -41704,7 +41776,7 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
 var config2 = loadConfig();
 var store = new TaskStore(config2.stateDir);
 var manager = new TaskManager(config2, new DshClient(config2), store);
-var server = new McpServer({ name: "codex-subagent-dsh", version: "0.2.0" });
+var server = new McpServer({ name: "codex-subagent-dsh", version: "0.3.0" });
 var connectCommand = `node ${JSON.stringify(fileURLToPath(new URL("./connect.mjs", import.meta.url)))}`;
 var key = external_exports.string().min(1).max(128);
 var scope = { conversationKey: key, taskId: external_exports.string().uuid() };
@@ -41739,7 +41811,7 @@ server.registerTool("dsh_submit", {
   inputSchema: { conversationKey: key, requestId: key, goal: external_exports.string().min(1).max(16e3), context: external_exports.string().max(32e3).optional(), cwd: external_exports.string().min(1).max(4096), mode: external_exports.enum(["read", "write"]), allowedPaths: external_exports.array(external_exports.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: external_exports.array(external_exports.string().min(1).max(2e3)).min(1).max(30), baselineCommit: external_exports.string().regex(/^[a-fA-F0-9]{40}$/).optional(), modelSelection: external_exports.object({ provider: external_exports.string().min(1).max(256), model: external_exports.string().min(1).max(256), reasoningEffort: external_exports.string().min(1).max(256).optional() }).strict().optional() },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
 }, (input2) => guarded(async () => view(await manager.submit(input2))));
-server.registerTool("dsh_task", { description: "Read or boundedly wait for a scoped DSH task; waitMs is at most 20 seconds. Unknown tasks receive a bounded read-only check of the original session for a provable terminal state/result. Running or incomplete evidence stays unknown and retains workspace reservations. Never auto-resubmit; verify results independently.", inputSchema: { ...scope, waitMs: external_exports.number().int().min(0).max(config2.maxWaitMs).default(0) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input2, extra) => guarded(async () => view(await manager.task(input2.conversationKey, input2.taskId, input2.waitMs, extra.signal))));
+server.registerTool("dsh_task", { description: "Read or boundedly wait for a scoped DSH task; waitMs is at most 20 seconds. Returns early for live waiting_permission: direct the user to this sessionId in DSH; do not approve or poll repeatedly while user action is pending. The task deadline continues. Unknown tasks receive a bounded read-only check of the original session for a provable terminal state/result. Running or incomplete evidence stays unknown and retains workspace reservations. Never auto-resubmit; verify results independently.", inputSchema: { ...scope, waitMs: external_exports.number().int().min(0).max(config2.maxWaitMs).default(0) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input2, extra) => guarded(async () => view(await manager.task(input2.conversationKey, input2.taskId, input2.waitMs, extra.signal))));
 server.registerTool("dsh_cancel", { description: "Request cancellation of the matching scoped task. Acceptance of a cancel request is not proof of termination; inspect returned state. Cancellation does not roll back changes.", inputSchema: scope, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false } }, (input2) => guarded(async () => view(await manager.cancel(input2.conversationKey, input2.taskId))));
 var closing = false;
 async function close() {
