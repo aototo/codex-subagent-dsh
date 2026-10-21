@@ -33,7 +33,11 @@ function normalizeLoopbackOrigin(value) {
 }
 function loadConfig(env = process.env) {
   const configuredHome = env.DSH_SUBAGENT_HOME?.trim();
+  const connectionMode = env.DSH_CONNECTION_MODE?.trim() || (env.DSH_SUBAGENT_URL?.trim() ? "web" : "auto");
+  if (!["auto", "web", "desktop"].includes(connectionMode)) throw new Error("DSH_CONNECTION_MODE must be auto, web, or desktop");
   return {
+    connectionMode,
+    expectedDshHome: resolve(env.DSH_HOME?.trim() || resolve(homedir(), ".dsh")),
     origin: normalizeLoopbackOrigin(env.DSH_SUBAGENT_URL?.trim() || DEFAULT_ORIGIN),
     stateDir: resolve(configuredHome || DEFAULT_STATE_DIR),
     rpcTimeoutMs: 1e4,

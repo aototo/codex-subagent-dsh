@@ -59,3 +59,17 @@ Companion 0.4.0 also provides `/codex-pairing/v1` for browser pairing. Public en
 Prefer a stable versioned installation directory outside Codex's disposable plugin cache. Retain the previous companion directory for rollback; install the new path only in the intended DSH profile and restart when no active work would be interrupted. Do not remove a directory while DSH still depends on it.
 
 建议完整复制到 Codex 缓存之外的稳定版本目录再安装，保留旧目录以便回滚；先确认实际 profile 与运行任务，再安全重启。不要删除 DSH 仍引用的目录。
+
+## Desktop model routing / 桌面模型路由（Codex 插件 0.5.0）
+
+Companion 0.4.1 adds an explicit Desktop 0.2.1-rc.2 dependency combination. It reuses the same session-scoped hooks and authenticated model routes. The older 0.4.0 manifest is pinned to Web runtime dependencies and may be skipped by Desktop's loader; a working connection bridge alone does not provide model selection.
+
+companion 0.4.1 补充 Desktop 0.2.1-rc.2 的明确依赖组合，复用已有会话请求钩子和鉴权路由。旧 0.4.0 的依赖锁定可能让桌面加载器跳过组件；连接桥接可用不代表模型路由可用。具体实测范围以仓库兼容矩阵为准。
+
+For Desktop, copy this entire bundle into a stable versioned local directory, then install that absolute directory using Desktop's plugin manager and enable it. Keep `dsh-desktop-bridge` enabled for authorization and leave the Aotu assistant component intact. Do not use `dsh plugin --profile desktop`. If a reload is requested, check for active tasks first. Use the Desktop bridge's permission UI for connection; the companion's existing Web pairing routes are not the Desktop onboarding flow.
+
+桌面安装：完整复制到稳定版本目录，在 DSH 客户端插件管理中安装该绝对目录并启用。保持 `dsh-desktop-bridge` 和凹凸助手组件的状态；不要使用 `dsh plugin --profile desktop`。如客户端要求重载，先检查运行任务。桌面连接仍使用桥接组件的授权入口；companion 内保留的 Web 配对路由不是桌面的推荐连接流程。
+
+After installation call `dsh_status` with `connectionMode: "desktop"` and `includeModels: true` in a new Codex conversation. Only when `modelRouting.available` is true, use exact provider/model/reasoningEffort identifiers returned by the catalog. Never change the shared default through `session/selectModel`. Actual request-header evidence must match the requested route before accepting completion.
+
+安装后在新 Codex 对话调用 `dsh_status`（`connectionMode: "desktop"`、`includeModels: true`），确认 `modelRouting.available=true`，再从目录选择精确 provider/model/reasoningEffort。不要用 `session/selectModel` 改共享默认配置；验收需要实际 request/header 与指定配置一致。未指定模型的任务保持原有默认行为。

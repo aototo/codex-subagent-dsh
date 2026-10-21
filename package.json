@@ -1,6 +1,6 @@
 {
   "name": "codex-subagent-dsh",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "license": "MIT",
   "repository": {
@@ -21,7 +21,7 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "ws": "8.21.3",
     "zod": "4.6.5"
   },
