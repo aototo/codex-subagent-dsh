@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import WebSocket from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmod, copyFile, lstat, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
@@ -16,7 +16,7 @@ if (!app) throw Error('Set DSH_DESKTOP_APP to the installed .app directory. This
 const resource = path.join(app, 'Contents/Resources');
 const archive = path.join(resource, 'app.asar');
 const node = path.join(resource, 'runtime/primary-runtime/dependencies/node/bin/node');
-const bundle = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../plugins/codex-subagent-dsh/dsh-desktop-bridge');
+const bundle = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../plugins/codex-subagent-dsh/dsh-plugin');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let temporary, child;
 async function stop() {
@@ -69,8 +69,24 @@ async function extractRuntime(target) {
   } finally { await handle.close(); }
 }
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const companion = path.join(repoRoot, 'plugins/codex-subagent-dsh/dsh-companion');
+const companion = path.join(repoRoot, 'plugins/codex-subagent-dsh/dsh-plugin');
 const adapter = path.join(repoRoot, 'scripts/fixtures/dsh-fake-adapter');
+const migration = process.argv.includes('--migration');
+const duplicates = process.argv.includes('--duplicates');
+// Freeze legacy fixture bytes at the released main baseline, never copy live installations.
+async function legacyFixture(directory) {
+  const prefix = 'plugins/codex-subagent-dsh/' + directory;
+  const files = execFileSync('git', ['ls-tree', '-r', '--name-only', 'b5cab81', '--', prefix], { cwd: repoRoot, encoding: 'utf8' }).trim().split('\n');
+  const output = join(temporary, 'legacy', directory);
+  for (const file of files) {
+    assert(file.startsWith(prefix + '/'));
+    const target = join(output, file.slice(prefix.length + 1));
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, execFileSync('git', ['show', 'b5cab81:' + file], { cwd: repoRoot }));
+  }
+  return output;
+}
+
 const join = path.join;
 const selectionA = { provider: 'codex-fixture', model: 'fixture-model-a', reasoningEffort: 'fixture-high' };
 const selectionB = { provider: 'codex-fixture', model: 'fixture-model-b', reasoningEffort: 'fixture-low' };
@@ -181,12 +197,17 @@ try {
   home=join(temporary,'dsh-home');runtime=join(temporary,'runtime');profile=join(home,'profiles/desktop');
   await extractRuntime(runtime);
   await mkdir(join(profile,'node_modules/@aototo'),{recursive:true});
-  const bundles=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app'];
-  for(const directory of [companion,adapter]){
+  const baseBundles=['@deepseek-ai/dsh-base','@deepseek-ai/dsh-web-app'];
+  const unifiedName = JSON.parse(await readFile(join(companion,'package.json'),'utf8')).name;
+  const legacyNames = ['@aototo/codex-subagent-dsh-companion','@aototo/codex-subagent-dsh-desktop-bridge'];
+  const adapterName = JSON.parse(await readFile(join(adapter,'package.json'),'utf8')).name;
+  const legacyDirs = migration || duplicates ? await Promise.all(['dsh-companion','dsh-desktop-bridge'].map(legacyFixture)) : [];
+  for(const directory of [companion,adapter,...legacyDirs]){
     const manifest=JSON.parse(await readFile(join(directory,'package.json'),'utf8'));
-    await symlink(directory,join(profile,'node_modules',manifest.name));bundles.push(manifest.name);
+    await symlink(directory,join(profile,'node_modules',manifest.name));
   }
-  await writeFile(join(profile,'package.json'),JSON.stringify({name:'isolated-desktop-model-probe',private:true,dsh:{profile:{bundles}}}));
+  const useBundles = async names => writeFile(join(profile,'package.json'),JSON.stringify({name:'isolated-desktop-model-probe',private:true,dsh:{profile:{bundles:[...baseBundles,...names,adapterName]}}}));
+  await useBundles(migration ? legacyNames : [unifiedName]);
   await writeFile(join(profile,'cordis.patch.yml'),'- id: agent-default-model\n  config:\n    provider: codex-fixture\n    model: fixture-model-c\n');
   const env={...process.env,DSH_HOME:home,DSH_SUBAGENT_HOME:join(temporary,'state')};
   await mkdir(join(home, 'workspaces', 'a'), { recursive: true });
@@ -194,6 +215,21 @@ try {
   await mkdir(join(home, 'workspaces', 'c'), { recursive: true });
   host = await startHost(env);
   let auth = await authenticate(host.loginUrl);
+  const grantPath=join(env.DSH_SUBAGENT_HOME,'codex-desktop','desktop-connection.json');
+  const grantCredential=join(env.DSH_SUBAGENT_HOME,'codex-desktop','credentials',createHash('sha256').update(auth.origin).digest('hex')+'.json');
+  const grantStatus=await fetch(auth.origin+'/codex-desktop-bridge/v1/status',{headers:{cookie:auth.cookie,origin:auth.origin}});
+  assert.equal(grantStatus.status,200);
+  const csrf=(await grantStatus.json()).csrf;
+  const allowed=await fetch(auth.origin+'/codex-desktop-bridge/v1/approve',{method:'POST',headers:{cookie:auth.cookie,origin:auth.origin,'content-type':'application/json'},body:JSON.stringify({csrf})});
+  assert.equal(allowed.status,200);
+  const originalGrant=await readFile(grantPath,'utf8'),originalCredential=await readFile(grantCredential,'utf8');
+  const assistantDiscovery=join(env.DSH_SUBAGENT_HOME,'desktop-connection.json'),assistantCredential=join(env.DSH_SUBAGENT_HOME,'credentials','assistant-fixture.json');
+  await mkdir(path.dirname(assistantCredential),{recursive:true});
+  await writeFile(assistantDiscovery,'isolated assistant discovery');await writeFile(assistantCredential,'isolated assistant credential');
+  const unchangedGrants=async()=>{
+    assert.equal(await readFile(grantPath,'utf8'),originalGrant);assert.equal(await readFile(grantCredential,'utf8'),originalCredential);
+    assert.equal(await readFile(assistantDiscovery,'utf8'),'isolated assistant discovery');assert.equal(await readFile(assistantCredential,'utf8'),'isolated assistant credential');
+  };
   const unauthenticated = await rawRpc(auth, '/api/codex-session-model/capabilities.get', 'capabilities.get', {}, false);
   assert.equal(unauthenticated.status, 401);
   const before = await companionRpc(auth, 'capabilities.get', {});
@@ -223,7 +259,9 @@ try {
   assert.equal((await companionRpc(auth, 'selection.get', { sessionId: sessionC })).pinned, false);
 
   await stopHost(host);
+  if(migration) await useBundles([unifiedName]);
   host = await startHost(env);
+  await unchangedGrants();
   auth = await authenticate(host.loginUrl);
   const after = await companionRpc(auth, 'capabilities.get', {});
   assert.deepEqual(after.catalog.default, before.catalog.default, 'companion changed the shared default model');
@@ -294,8 +332,41 @@ try {
   await mcpClient.close();mcpClient=undefined;
   assert.deepEqual((await companionRpc(auth,'capabilities.get',{})).catalog.default,before.catalog.default);
 
+  await unchangedGrants();
+  if(migration){
+    await stopHost(host);await useBundles(legacyNames);host=await startHost(env);auth=await authenticate(host.loginUrl);await unchangedGrants();
+    for(const [sessionId,selection] of [[sessionA,selectionA],[sessionB,selectionB]]) assert(sameSelection((await companionRpc(auth,'selection.get',{sessionId})).requested,selection));
+    assert.deepEqual((await companionRpc(auth,'capabilities.get',{})).catalog.default,before.catalog.default);
+  }
+  const duplicateResults=[];
+  if(duplicates){
+    const manager=(operation,args={})=>rpc(auth,'/api/pluginManager/'+operation,'pluginManager/'+operation,{args});
+    const getRows=()=>manager('listPlugins');
+    for(const names of [[...legacyNames,unifiedName],[unifiedName,...legacyNames]]){
+      await stopHost(host);await useBundles(names);host=await startHost(env);auth=await authenticate(host.loginUrl);
+      const rows=await getRows();
+      const unified=rows.find(row=>row.moduleName===unifiedName);
+      assert(unified && unified.fiberPhase!=='active','mixed startup activated unified plugin');
+      for(const name of legacyNames) assert.equal(rows.find(row=>row.moduleName===name)?.fiberPhase,'active','mixed startup damaged legacy plugin');
+      await unchangedGrants();duplicateResults.push({order:names,unifiedRejected:true,legacyActive:true});
+    }
+    await stopHost(host);
+    await writeFile(join(profile,'cordis.patch.yml'),'- id: agent-default-model\n  config:\n    provider: codex-fixture\n    model: fixture-model-c\n- id: codex-session-model-routing\n  disabled: true\n- id: codex-subagent-dsh-desktop-bridge\n  disabled: true\n');
+    await useBundles([unifiedName,...legacyNames]);host=await startHost(env);auth=await authenticate(host.loginUrl);
+    assert.equal((await getRows()).find(row=>row.moduleName===unifiedName)?.fiberPhase,'active');
+    for(const name of legacyNames){
+      const beforeRows=await getRows(),legacy=beforeRows.find(row=>row.moduleName===name);assert(legacy&&!legacy.enabled);
+      const outcome=await manager('setPluginEnabled',{id:legacy.entryId,enabled:true});
+      assert.notEqual(outcome.application,'restart-required','dynamic test must exercise live HMR');
+      const rows=await getRows();
+      assert.notEqual(rows.find(row=>row.moduleName===name)?.fiberPhase,'active','dynamic legacy activation bypassed guard');
+      assert.equal(rows.find(row=>row.moduleName===unifiedName)?.fiberPhase,'active','dynamic conflict disabled unified plugin');
+      await unchangedGrants();await companionRpc(auth,'capabilities.get',{});
+      duplicateResults.push({dynamic:name,legacyRejected:true,unifiedActive:true});
+    }
+  }
   const version=JSON.parse(await readFile(join(runtime,'node_modules/@deepseek-ai/dsh-desktop-host/package.json'),'utf8')).version;
-  console.log(JSON.stringify({ok:true,desktopHostVersion:version,authentication:{unauthenticatedStatus:401,authenticated:true},persistence:{restarted:true,sessionA:restoredA.pinned,sessionB:restoredB.pinned},isolation:{sessionA:actualA.actualRequest,sessionB:actualB.actualRequest,sessionC:actualC.actualRequest,sessionCUnpinned:restoredC.pinned===false},sharedDefaultUnchanged:true,terminals,bundledMcp:{state:completed.state,modelRouting:completed.modelRouting}},null,2));
+  console.log(JSON.stringify({ok:true,duplicateResults,migration:{legacyToUnified:migration,rollback:migration,grantFilesUnchanged:true,assistantFilesUnchanged:true,oldGrantNotAssumedValidAfterHostRestart:true},desktopHostVersion:version,authentication:{unauthenticatedStatus:401,authenticated:true},persistence:{restarted:true,sessionA:restoredA.pinned,sessionB:restoredB.pinned},isolation:{sessionA:actualA.actualRequest,sessionB:actualB.actualRequest,sessionC:actualC.actualRequest,sessionCUnpinned:restoredC.pinned===false},sharedDefaultUnchanged:true,terminals,bundledMcp:{state:completed.state,modelRouting:completed.modelRouting}},null,2));
 } finally {
   await mcpClient?.close().catch(()=>{});
   clearTimeout(timeout);

@@ -36,7 +36,7 @@ function desktopStatus(status: Awaited<ReturnType<TaskManager['status']>>) {
     guidance: 'Start DSH desktop and authorize its connection bridge, then open a new Codex conversation. The selected backend will not change in this process.',
   } : {}) };
 }
-const server = new McpServer({ name: 'codex-subagent-dsh', version: '0.5.0' });
+const server = new McpServer({ name: 'codex-subagent-dsh', version: '0.6.0' });
 const connectCommand = `node ${JSON.stringify(fileURLToPath(new URL('./connect.mjs', import.meta.url)))}`;
 const key = z.string().min(1).max(128);
 const connectionMode = z.enum(['auto', 'web', 'desktop']).optional().describe('Select a backend on the first call. auto prefers reachable Web, then authorized Desktop. Once selected, changing backend requires a new Codex conversation.');

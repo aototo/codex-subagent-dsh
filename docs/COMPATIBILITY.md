@@ -121,3 +121,28 @@ Desktop0.2.1-rc.2 + Codex desktop bridge0.1.1 + 本机凹凸助手bridge已真�
 本轮160项自动化测试通过，新增不同会话隔离、未指定effort清除继承、实际header独立报告和持久pin恢复验证。真实应用包内Desktop host的临时profile已完成鉴权、非法effort拒绝、不同会话/模型/档位隔离、冷重启恢复、全局默认不变，以及MCP指定模型任务completed和requested/configured/actualRequest一致；使用的是模拟模型adapter，不代表外部provider已验收。并发A/B及未固定C均通过原生remote.mux核对turn/end=completed和精确fixture响应文本。
 
 用户确认后，实际桌面已安装并启用companion0.4.1，无需重启；Codex bridge和凹凸助手同时保持启用。真实DeepSeek Flash/low与swe-2/high并发最小任务均completed、attempt=1、精确返回DSH_MODEL_OK，三份模型证据一致。全局默认及两套连接文件不变，凹凸助手连接复查通过。以上属于发布前构建验收；正式 Codex 安装升级与发布阶段结果单独记录在 [计划账本](WEB_DESKTOP_PLAN.md)，不将已安装桌面组件等同于 GitHub 发布。其它模型/档位未逐一实测。
+
+
+## 0.6.0 单一 DSH 插件（2026-10-21，开发验收）
+
+分发目录统一为 `plugins/codex-subagent-dsh/dsh-plugin`，包名 `@aototo/codex-subagent-dsh`。旧两包只作为历史版本和迁移fixture，不再随新版本分发。下列为隔离真实宿主结果；模型使用合成adapter，不代表全部真实供应商已验收。
+
+| 宿主 | 单包 | 实测结果 |
+|---|---|---|
+| Web 0.2.1-rc.2 | 0.6.0 | 浏览器允许/拒绝、登录引导、CSRF/取消、MCP ready；三个会话模型隔离与完成结果通过 |
+| Desktop 0.2.1-rc.2 / Cordis 4.0.5 | 0.6.0 | 桥接授权/拒绝、凭据权限；模型与推理档位隔离、MCP completed；迁移/回滚/混装通过 |
+
+`npm run check`：167 tests通过，类型检查与构建通过；运行依赖审计0漏洞。旧版Web 0.1.5-rc.2的历史记录仍保留，但本轮未重跑该版本，peer范围不能代替实测。
+
+迁移probe从已合并基线 `b5cab81ecd1e88af1f43b92730935c46bf4a8de7` 提取旧组件至临时目录，验证旧包→统一包→旧包的会话pin与授权文件保持；DSH重启后的旧Cookie有效性仍须另行检查。静态混装两种顺序均拒绝统一包；动态后启旧包均在其执行前被拒绝，统一API继续可用。Cordis可能将被拒绝项写为disabled。凹凸助手文件隔离在probe中用独立同origin文件模拟，不等于真实飞书业务验收。
+
+复现命令（在仓库安装开发依赖并构建后）：
+
+```bash
+DSH_DESKTOP_APP="/Applications/DeepSeek Harness.app" node scripts/probe-desktop-bridge.mjs
+DSH_DESKTOP_APP="/Applications/DeepSeek Harness.app" node scripts/probe-desktop-model-routing.mjs --migration --duplicates
+DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-companion.mjs
+DSH_INSTALL_ROOT=/path/to/@deepseek-ai/dsh node scripts/probe-dsh-browser-pairing.mjs
+```
+
+以上进程、profile与凭据全部临时隔离并清理；未重启用户DSH。随后完成本机Desktop迁移：统一包0.6.0已启用，原授权复用；真实swe-2/high与DeepSeek Flash/low任务均completed且三层模型证据一致，共享默认不变。凹凸助手依赖、启用状态与六份授权/连接文件核对正常，只读连接通过；未发送飞书消息。正式Codex0.5.0可继续连接。此为本机开发安装，尚未发布。

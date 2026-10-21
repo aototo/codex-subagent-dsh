@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 
-const base = new URL('../plugins/codex-subagent-dsh/dsh-desktop-bridge/', import.meta.url);
+const base = new URL('../src/desktop-bridge/', import.meta.url);
 const { DesktopGrant } = await import(new URL('grant.mjs', base).href);
 const { apply } = await import(new URL('index.mjs', base).href);
 const origin = 'http://127.0.0.1:45678';

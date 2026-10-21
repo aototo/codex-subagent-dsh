@@ -1,0 +1,52 @@
+{
+  "name": "@aototo/codex-subagent-dsh",
+  "version": "0.6.0",
+  "description": "Codex subagent integration for DeepSeek Harness Web and Desktop",
+  "type": "module",
+  "main": "index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./client": "./client.js"
+  },
+  "files": [
+    "index.mjs",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2 || 4.0.5",
+    "@deepseek-ai/dsh-agent": "0.1.5-rc.2 || 0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-session-controller": "0.1.5-rc.2 || 0.2.1-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.5-rc.2 || 0.2.1-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-session-controller": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-connection": {
+      "optional": true
+    }
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,3 @@
+- insert:
+    - id: codex-subagent-dsh
+      name: '@aototo/codex-subagent-dsh'

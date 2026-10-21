@@ -196,6 +196,10 @@ async function resolveAgent(ctx: Context, sessionId: unknown): Promise<AgentLike
 
 export function apply(ctx: Context): void {
   applyPairing(ctx);
+  applyModelRouting(ctx);
+}
+
+export function applyModelRouting(ctx: Context): void {
   const installations = new Map<AgentLike, Installation>();
   const locks = new Map<string, Promise<unknown>>();
   let closed = false;

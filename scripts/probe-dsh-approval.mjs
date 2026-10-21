@@ -149,10 +149,10 @@ let home, host, mcpClient;
 try {
   home = await mkdtemp(join(tmpdir(), 'codex-dsh-approval-'));
   await chmod(home, 0o700);
-  const env = { ...process.env, DSH_HOME: home };
+  const env = { ...process.env, DSH_HOME: home, DSH_SUBAGENT_HOME: join(home, 'isolated-state') };
   run(['--profile', profile, '--from-default-profile', 'web', '--dump-config'], env);
   run(['plugin', '--profile', profile, 'add', '-w', adapter], env);
-  run(['plugin', '--profile', profile, 'add', '-w', join(repoRoot, 'plugins/codex-subagent-dsh/dsh-companion')], env);
+  run(['plugin', '--profile', profile, 'add', '-w', join(repoRoot, 'plugins/codex-subagent-dsh/dsh-plugin')], env);
   await writeFile(join(home, 'profiles', profile, 'cordis.patch.yml'), '- id: agent-default-model\n  config:\n    provider: codex-fixture\n    model: fixture-model-c\n', { mode: 0o600 });
   host = await startHost(env);
   const auth = await authenticate(host.loginUrl);

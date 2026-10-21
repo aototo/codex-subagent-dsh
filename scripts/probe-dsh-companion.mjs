@@ -15,7 +15,7 @@ if (!dshRoot) throw new Error('DSH_INSTALL_ROOT must point to an installed @deep
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
-const companion = join(repoRoot, 'plugins/codex-subagent-dsh/dsh-companion');
+const companion = join(repoRoot, 'plugins/codex-subagent-dsh/dsh-plugin');
 const adapter = join(repoRoot, 'scripts/fixtures/dsh-fake-adapter');
 const bin = join(dshRoot, 'lib/bin.js');
 const profile = 'codex-model-routing-gate';
@@ -138,7 +138,7 @@ let mcpClient;
 try {
   home = await mkdtemp(join(tmpdir(), 'codex-dsh-model-routing-'));
   await chmod(home, 0o700);
-  const env = { ...process.env, DSH_HOME: home };
+  const env = { ...process.env, DSH_HOME: home, DSH_SUBAGENT_HOME: join(home, 'isolated-state') };
   run(['--profile', profile, '--from-default-profile', 'web', '--dump-config'], env);
   run(['plugin', '--profile', profile, 'add', '-w', companion], env);
   run(['plugin', '--profile', profile, 'add', '-w', adapter], env);
@@ -150,7 +150,7 @@ try {
     '',
   ].join('\n'), { mode: 0o600 });
   const profileManifest = JSON.parse(await readFile(join(home, 'profiles', profile, 'package.json'), 'utf8'));
-  assert(profileManifest.dsh.profile.bundles.includes('@aototo/codex-subagent-dsh-companion'));
+  assert(profileManifest.dsh.profile.bundles.includes('@aototo/codex-subagent-dsh'));
   assert(profileManifest.dsh.profile.bundles.includes('@aototo/codex-subagent-dsh-fake-adapter'));
 
   await mkdir(join(home, 'workspaces', 'a'), { recursive: true });
