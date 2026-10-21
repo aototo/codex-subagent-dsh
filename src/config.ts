@@ -4,8 +4,15 @@ import { resolve } from 'node:path';
 const DEFAULT_ORIGIN = 'http://127.0.0.1:3080';
 const DEFAULT_STATE_DIR = resolve(homedir(), '.codex-subagent-dsh');
 
+/** Desktop grants never share Web or legacy assistant credentials. */
+export function desktopStateDir(stateDir: string): string {
+  return resolve(stateDir, 'codex-desktop');
+}
+
 export interface BridgeConfig {
   origin: string;
+  connectionMode?: 'auto' | 'web' | 'desktop';
+  expectedDshHome?: string;
   stateDir: string;
   rpcTimeoutMs: number;
   taskTimeoutMs: number;
@@ -47,7 +54,11 @@ export function normalizeLoopbackOrigin(value: string): string {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): BridgeConfig {
   const configuredHome = env.DSH_SUBAGENT_HOME?.trim();
+  const connectionMode = env.DSH_CONNECTION_MODE?.trim() || (env.DSH_SUBAGENT_URL?.trim() ? 'web' : 'auto');
+  if (!['auto', 'web', 'desktop'].includes(connectionMode)) throw new Error('DSH_CONNECTION_MODE must be auto, web, or desktop');
   return {
+    connectionMode: connectionMode as BridgeConfig['connectionMode'],
+    expectedDshHome: resolve(env.DSH_HOME?.trim() || resolve(homedir(), '.dsh')),
     origin: normalizeLoopbackOrigin(env.DSH_SUBAGENT_URL?.trim() || DEFAULT_ORIGIN),
     stateDir: resolve(configuredHome || DEFAULT_STATE_DIR),
     rpcTimeoutMs: 10_000,

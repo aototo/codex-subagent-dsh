@@ -1,6 +1,6 @@
 # 兼容性与来源记录
 
-记录日期：2026-09-20。本文记录源码、本机安装和 CLI 调用结果；不代表已经完成 GitHub 来源的更新、卸载或桌面端完整验收。
+更新日期：2026-10-21。当前候选为 Codex 插件 0.5.0、companion 0.4.1、desktop bridge 0.1.1；本次 PR 合并前 GitHub main 仍为 0.4.0。最新双端验收见下方 0.5.0 兼容矩阵；前期版本记录保留作历史证据，不代表当前安装状态。Git 来源升级、其他平台和桌面完整生命周期不能由局部验收外推。
 
 ## 运行与构建基线
 
@@ -10,7 +10,7 @@
 | npm | 本机实测 `10.9.7` |
 | TypeScript | 锁文件版本 `5.9.3` |
 | esbuild | 锁文件版本 `0.28.2` |
-| MCP SDK | 锁文件版本 `1.30.0` |
+| MCP SDK | 0.5.0 候选锁文件版本 `1.32.1` |
 | ws | 锁文件版本 `8.21.3` |
 | zod | 锁文件版本 `4.6.5` |
 | DSH 地址 | 首版仅允许回环地址，默认 `http://127.0.0.1:3080` |
@@ -42,11 +42,11 @@
 `waiting_permission`；不依赖新增 companion 接口，也不恢复断线后的活跃等待。
 浏览器人工验收及发布状态见[授权验证记录](APPROVAL_WAIT_VERIFICATION.md)。
 
-当前实现面向已实测的 DSH Web 协议：斜线路径 RPC（例如 `/api/session/create`）、`payload.args.request` 参数包装，以及 `/api/remote.mux` 上的 `session/follow`。首次连接需要 DSH 启动登录链接，并通过本地入口换取 Cookie；只配置地址不足以完成认证。
+当前实现面向已实测的 DSH Web 协议：斜线路径 RPC（例如 `/api/session/create`）、`payload.args.request` 参数包装，以及 `/api/remote.mux` 上的 `session/follow`。Web 首次连接可通过 companion 浏览器配对，启动登录链接和本地连接命令仅作兼容回退；Desktop 使用客户端授权入口。只配置地址不足以完成认证。
 
 凭证失效时必须重新连接。插件不读取浏览器 Cookie或服务端签名密钥，不自动重启 DSH，也不会自动重发结果未知的任务。
 
-可选的 Session 模型固定需要同仓库的 DSH companion。当前兼容性门禁覆盖顶层
+可选的 Session 模型固定需要同仓库的 DSH companion。Web 兼容性门禁覆盖顶层
 `@deepseek-ai/dsh@0.1.5-rc.1`、实际解析到的 `dsh-agent`、
 `dsh-api-session-controller`、`dsh-client-connection` 0.1.5-rc.2 和 Cordis
 4.0.2。companion 在现有 `/api` carrier 下注册
@@ -68,7 +68,7 @@
 
 上游包实现 DSH 调用 Codex，本项目实现 Codex 调用 DSH。这里只借鉴 provider 分层、一次性子上下文、任务生命周期和显式失败状态等设计模式，没有复制上游实现或复用其 app-server 协议。
 
-## 尚未验证
+## 早期版本未覆盖范围（历史记录）
 
 - 0.2.0 尚未发布到 GitHub marketplace；此前 Git 来源验证属于 0.1.1。0.2.0 的桌面新对话工具发现与显式模型委派为用户报告，维护者尚未独立复现；GitHub 全新安装、更新、卸载和其他用户环境仍待验证
 - GitHub marketplace 已在隔离 Codex 配置中完成首次安装；Git 来源的更新、卸载和其他用户环境仍待验证
@@ -83,7 +83,7 @@
 
 按需恢复不等于后台接管。原任务仍运行、快照被截断、事件不连续、请求或回合不匹配、队列非空、投影落后时仍保留 unknown。当前只恢复 completed（有有效结果）与有取消意图的 aborted→cancelled；其他结束原因保守保留 unknown。
 
-恢复增量的本地验证快照版本为 `0.1.0+codex.20260919062647`；该阶段公开清单版本为 `0.1.1`。当前仓库清单和 companion 包版本已统一为 `0.2.0`，加入可选 Session 模型固定和模型目录发现。类型检查、构建与 74 项自动化测试通过；插件清单和技能校验结果见[验证记录](VERIFICATION.md)。`dsh_status` 保留未启动、待认证和就绪三态诊断，待认证时返回实际安装路径对应的连接命令；`includeModels: true` 只在就绪后请求净化后的 companion 目录。已有对话的 MCP 可能仍运行旧快照，使用新对话加载更新版本。
+恢复增量的本地验证快照版本为 `0.1.0+codex.20260919062647`；该阶段公开清单版本为 `0.1.1`。当时仓库清单和 companion 包版本统一为 `0.2.0`，加入可选 Session 模型固定和模型目录发现。类型检查、构建与 74 项自动化测试通过；插件清单和技能校验结果见[验证记录](VERIFICATION.md)。`dsh_status` 保留未启动、待认证和就绪三态诊断，待认证时返回实际安装路径对应的连接命令；`includeModels: true` 只在就绪后请求净化后的 companion 目录。已有对话的 MCP 可能仍运行旧快照，使用新对话加载更新版本。
 
 ## Session 模型固定的隔离主机门禁
 
@@ -97,3 +97,27 @@
 
 探针中的模型和 adapter 都是测试夹具。它证明 host API、鉴权、持久化、hook、事件顺序
 和 bridge envelope 的组合行为，不证明任何外部 provider 或生产模型当前可用。
+
+## Web / Desktop 0.5.0 兼容矩阵（发布候选）
+
+| 组合 | 本轮验证 | 尚未覆盖 |
+|---|---|---|
+| 原有 Web + companion 已验证组合 | 原有配对/模型/任务自动化回归；连接选择不改变原协议 | 未对所有新版 Web runtime 宣称兼容 |
+| macOS Desktop 0.2.1-rc.2 + desktop bridge 0.1.1 | 实际客户端安装/启用、用户允许/拒绝、Codex 与凹凸助手双向授权文件隔离、普通任务 completed/attempt=1；隔离主机的接口安全/过期/退出检查 | 客户端重启后重新授权的完整 UI 流程、复杂工具任务与完整生命周期 |
+| 同版 Desktop + companion 0.4.1 + desktop bridge 0.1.1 | DeepSeek Flash/low、swe-2/high 并发最小任务 completed；requested/configured/actualRequest 匹配，全局默认不变 | 其他 provider/model/effort 组合未逐一实测 |
+
+0.5.0 包含 `dsh-desktop-bridge`，提供桌面首次连接；不是官方内置接口，也不提供模型路由。0.1.1 起 Codex 桌面连接仅使用 `codex-desktop` 子目录和 consumer 标记，不回退到旧 `@aotu/dsh-desktop-bridge` 授权。凹凸助手组件可同时启用，升级 Codex bridge 后需重新允许一次。当前 CLI 明确拒绝 desktop profile 管理，应通过客户端安装。不同版本、平台需要重新验证，不能把实测版本写成最低版本。
+
+双端同时可达时，auto 选 Web；可在首次 status/connect 明确选择 desktop。已绑定进程不会在鉴权或任务失败时切换；端口变化后不跨 origin 恢复旧任务。详见 [实施计划](WEB_DESKTOP_PLAN.md)、[桌面连接验收](DESKTOP_CONNECTION_VERIFICATION.md)。
+
+### 双组件同时启用验收（2026-10-21）
+
+Desktop0.2.1-rc.2 + Codex desktop bridge0.1.1 + 本机凹凸助手bridge已真实共同启用；用户分别授权后，双向对照确认只更新各自文件，另一方发现文件及凭据完全不变。两边连接检查通过，Codex开发运行时真实任务返回DSH_COEXIST_OK、completed/attempt1。具体taskId和证据见WEB_DESKTOP_PLAN.md。此结论不包含飞书消息端到端或桌面模型路由验收，也不表示已发布或更新Codex正式安装。
+
+### Desktop 会话模型与推理档位适配（companion 0.4.1）
+
+本轮核心 session hook 无需改变；companion 0.4.1 的 peerDependencies 明确加入 Desktop0.2.1-rc.2 对应 DSH 包与 Cordis4.0.5，并保留 Web0.1.5-rc.2 / Cordis4.0.2。旧manifest在本机Desktop加载过程中被跳过，表现为路由404。peer声明不是所有运行环境的严格版本门禁，不表示任意混合组合都已经兼容。
+
+本轮160项自动化测试通过，新增不同会话隔离、未指定effort清除继承、实际header独立报告和持久pin恢复验证。真实应用包内Desktop host的临时profile已完成鉴权、非法effort拒绝、不同会话/模型/档位隔离、冷重启恢复、全局默认不变，以及MCP指定模型任务completed和requested/configured/actualRequest一致；使用的是模拟模型adapter，不代表外部provider已验收。并发A/B及未固定C均通过原生remote.mux核对turn/end=completed和精确fixture响应文本。
+
+用户确认后，实际桌面已安装并启用companion0.4.1，无需重启；Codex bridge和凹凸助手同时保持启用。真实DeepSeek Flash/low与swe-2/high并发最小任务均completed、attempt=1、精确返回DSH_MODEL_OK，三份模型证据一致。全局默认及两套连接文件不变，凹凸助手连接复查通过。以上属于发布前构建验收；正式 Codex 安装升级与发布阶段结果单独记录在 [计划账本](WEB_DESKTOP_PLAN.md)，不将已安装桌面组件等同于 GitHub 发布。其它模型/档位未逐一实测。

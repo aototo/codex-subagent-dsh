@@ -2,7 +2,7 @@
 
 Generated from dependencies included in runtime/server.mjs and runtime/connect.mjs.
 
-## @modelcontextprotocol/sdk@1.30.0
+## @modelcontextprotocol/sdk@1.32.1
 
 License: MIT
 

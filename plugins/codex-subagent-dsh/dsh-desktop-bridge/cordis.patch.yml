@@ -1,0 +1,3 @@
+- insert:
+    - id: codex-subagent-dsh-desktop-bridge
+      name: '@aototo/codex-subagent-dsh-desktop-bridge'

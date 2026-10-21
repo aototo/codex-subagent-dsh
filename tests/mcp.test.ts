@@ -41,6 +41,10 @@ test('dsh_status distinguishes a stopped DSH from first-time authentication', as
 
   const authenticationRequired = await status();
   assert.equal(authenticationRequired.state, 'authentication_required');
+  assert.equal(authenticationRequired.connectionMode, 'web');
+  assert.equal(authenticationRequired.capabilities.taskConnection, false);
+  const conflict = await client.callTool({ name: 'dsh_status', arguments: { connectionMode: 'desktop' } });
+  assert.equal(JSON.parse((conflict.content as any)[0].text).code, 'DSH_BACKEND_BOUND', 'authentication failure never switches backends');
   assert.equal(authenticationRequired.dshRunning, true);
   assert.equal(authenticationRequired.connectCommand, `node ${JSON.stringify(path.join(await realpath(root), 'connect.mjs'))}`);
 
@@ -148,4 +152,82 @@ test('relocated bundled MCP: authenticate, five tools, correlated result, concur
   assert.equal(unknown.state, 'unknown'); assert.equal(promptCount, 3);
   assert.equal((await call(restarted, 'dsh_submit', { ...input, requestId: 'interrupt', goal: 'hold-open' })).taskId, interrupted.taskId);
   assert.equal(promptCount, 3);
+});
+
+test('desktop MCP consumes authorized discovery without pairing routes, and fails closed after restart', async t => {
+  const { writeFile, mkdir } = await import('node:fs/promises');
+  const { saveCredential } = await import('../src/auth.js');
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-desktop-mcp-'));
+  const stateDir = path.join(root, 'state');
+  await mkdir(stateDir, { mode: 0o700 });
+  let requests = 0;
+  let authorized = true;
+  const http = createServer(async (req, res) => {
+    requests++;
+    assert.equal(req.url, '/api/session/list', 'desktop connection must not call the browser pairing verification route');
+    if (!authorized || req.headers.cookie !== 'dsh-test=authorized') { res.writeHead(401); res.end(); return; }
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    const envelope = JSON.parse(raw);
+    assert.equal(envelope.method, 'session/list');
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ type: 'server-response', rpcId: envelope.rpcId, result: { ok: true, value: { items: [] } } }));
+  });
+  await new Promise<void>(resolve => http.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${(http.address() as any).port}`;
+  const metadata = { version: 1, consumer: 'codex-subagent-dsh', origin, pid: process.pid, approvedAt: new Date().toISOString(), dshHome: root, instanceId: 'desktop-test' };
+  const desktopDir = path.join(stateDir, 'codex-desktop');
+  await mkdir(desktopDir, { mode: 0o700 });
+  const metadataPath = path.join(desktopDir, 'desktop-connection.json');
+  await writeFile(metadataPath, JSON.stringify(metadata), { mode: 0o600 });
+  await saveCredential({ origin, stateDir, rpcTimeoutMs: 1000, taskTimeoutMs: 1000, maxWaitMs: 1000 }, { version: 1, origin, cookie: 'dsh-test=authorized', connectedAt: Date.now() });
+  const transport = new StdioClientTransport({ command: process.execPath, args: [path.resolve('plugins/codex-subagent-dsh/runtime/server.mjs')], env: { PATH: process.env.PATH!, DSH_SUBAGENT_URL: origin, DSH_HOME: root, DSH_SUBAGENT_HOME: stateDir }, stderr: 'pipe' });
+  transport.stderr?.on('data', () => {});
+  const client = new Client({ name: 'desktop-test', version: '1' });
+  t.after(async () => { await client.close().catch(() => {}); http.closeAllConnections(); await new Promise<void>(r => http.close(() => r())); await rm(root, { recursive: true, force: true }); });
+  await client.connect(transport);
+  const call = async (name: string, args = {}) => JSON.parse(((await client.callTool({ name, arguments: args })).content as any)[0].text);
+  const rootOnly = await call('dsh_status', { connectionMode: 'desktop' });
+  assert.equal(rootOnly.connected, false, 'legacy root credential must never authorize Desktop');
+  assert.equal(rootOnly.state, 'authentication_required');
+  assert.equal(requests, 0, 'missing private credential must not issue RPC with root credential');
+  await saveCredential({ origin, stateDir: desktopDir, rpcTimeoutMs: 1000, taskTimeoutMs: 1000, maxWaitMs: 1000 }, { version: 1, origin, cookie: 'dsh-test=authorized', connectedAt: Date.now() });
+  const ready = await call('dsh_status');
+  assert.equal(ready.connected, true);
+  assert.equal(ready.connectionMode, 'desktop');
+  assert.equal(ready.capabilities.modelSelection, 'not_checked');
+  const conflict = await call('dsh_connect', { connectionMode: 'web' });
+  assert.equal(conflict.code, 'DSH_BACKEND_BOUND');
+  assert.equal(conflict.nextAction, 'open_new_conversation');
+  assert.equal((await call('dsh_connect')).state, 'ready');
+  assert.equal((await call('dsh_connect', { action: 'cancel' })).state, 'no_pending_pairing');
+  assert.equal((await call('dsh_connect', { action: 'check' })).connected, true);
+  assert.equal(requests, 3);
+  authorized = false;
+  const unauthenticated = await call('dsh_connect', { action: 'check' });
+  assert.equal(unauthenticated.state, 'authentication_required');
+  assert.equal(unauthenticated.nextAction, 'authorize_desktop_bridge');
+  assert.equal(unauthenticated.connectCommand, undefined);
+  authorized = true;
+  assert.equal((await call('dsh_connect', { action: 'check' })).connected, true);
+  await writeFile(metadataPath, JSON.stringify({ ...metadata, instanceId: 'restarted' }), { mode: 0o600 });
+  const changed = await call('dsh_status');
+  assert.equal(changed.state, 'connection_unavailable');
+  assert.equal(changed.code, 'DESKTOP_INSTANCE_CHANGED');
+  assert.equal(changed.nextAction, 'open_new_conversation');
+  assert.equal(requests, 5, 'changed desktop must not receive RPC');
+});
+
+test('missing desktop discovery keeps MCP tools responsive without creating tasks', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'dsh-missing-desktop-'));
+  const transport = new StdioClientTransport({ command: process.execPath, args: [path.resolve('plugins/codex-subagent-dsh/runtime/server.mjs')], env: { PATH: process.env.PATH!, DSH_CONNECTION_MODE: 'desktop', DSH_SUBAGENT_HOME: root }, stderr: 'pipe' });
+  transport.stderr?.on('data', () => {});
+  const client = new Client({ name: 'missing-desktop-test', version: '1' });
+  t.after(async () => { await client.close().catch(() => {}); await rm(root, { recursive: true, force: true }); });
+  await client.connect(transport);
+  assert.equal((await client.listTools()).tools.length, 5);
+  const result = await client.callTool({ name: 'dsh_status', arguments: {} });
+  const missing = JSON.parse((result.content as any)[0].text);
+  assert.equal(missing.state, 'connection_unavailable');
+  assert.equal(missing.code, 'DESKTOP_DISCOVERY_MISSING');
+  assert.equal(missing.nextAction, 'install_or_authorize_desktop_bridge');
 });

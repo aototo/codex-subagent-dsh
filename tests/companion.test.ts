@@ -202,3 +202,77 @@ test('plugin disposal during catalog validation prevents append and hook install
   assert.equal(agent.events.length, 0);
   assert.equal(agent.listeners.size, 0);
 });
+
+// Both Web and Desktop use these same session-scoped middleware contracts.
+async function assembleRequest(agent: FakeAgent, defaults: Selection) {
+  const assemblyListeners = [...(agent.listeners.get('system-prompt/assemble') ?? [])];
+  let assembly = { variables: { ...defaults, sentinel: 'preserved' } };
+  for (const listener of assemblyListeners.reverse()) {
+    const downstream = assembly;
+    assembly = await listener({}, {}, async () => downstream) as typeof assembly;
+  }
+  let request = { ...defaults, messages: ['unchanged'] };
+  for (const listener of [...(agent.listeners.get('agent/request') ?? [])].reverse()) {
+    const downstream = request;
+    request = await listener({}, async () => downstream) as typeof request;
+  }
+  return { assembly, request };
+}
+
+test('session pins isolate both assembly and request from other sessions and shared defaults', async t => {
+  const harness = new CompanionHarness();
+  const a = harness.addAgent('session-a');
+  const b = harness.addAgent('session-b');
+  const unpinned = harness.addAgent('session-unpinned');
+  harness.start();
+  t.after(() => harness.dispose());
+  const defaults = { provider: 'shared', model: 'shared-default', reasoningEffort: 'inherited' };
+  const beforeCatalog = structuredClone(harness.catalog);
+  for (const [agent, selection] of [[a, selectionA], [b, selectionB]] as const) {
+    assert.equal((await harness.rpc('selection.set', { sessionId: agent.id, selection })).ok, true);
+  }
+  const [left, right, control] = await Promise.all([a, b, unpinned].map(agent => assembleRequest(agent, defaults)));
+  for (const [actual, selection] of [[left, selectionA], [right, selectionB]] as const) {
+    assert.equal(actual.assembly.variables.provider, selection.provider);
+    assert.equal(actual.assembly.variables.model, selection.model);
+    assert.equal(actual.assembly.variables.sentinel, 'preserved');
+    assert.deepEqual(actual.request, { ...selection, messages: ['unchanged'] });
+  }
+  assert.deepEqual(control.request, { ...defaults, messages: ['unchanged'] });
+  assert.equal(unpinned.listeners.size, 0);
+  assert.deepEqual(harness.catalog, beforeCatalog);
+});
+
+test('omitting effort removes inherited request effort and reports actual headers separately', async t => {
+  const harness = new CompanionHarness();
+  const agent = harness.addAgent('session-default-effort');
+  harness.start();
+  t.after(() => harness.dispose());
+  const selection = { provider: 'fixture', model: 'model-a' };
+  assert.equal((await harness.rpc('selection.set', { sessionId: agent.id, selection })).ok, true);
+  const result = await assembleRequest(agent, selectionB);
+  assert.deepEqual(result.request, { ...selection, messages: ['unchanged'] });
+  assert.equal(Object.hasOwn(result.request, 'reasoningEffort'), false);
+  assert.equal((await harness.rpc('selection.get', { sessionId: agent.id })).value.actualRequest, undefined);
+  // An adapter can materialize its own default; the verification API must report
+  // this actual header, not simply echo the configured selection as proof.
+  agent.session.append('request/header', { header: { config: selectionA } });
+  const verified = (await harness.rpc('selection.get', { sessionId: agent.id })).value;
+  assert.deepEqual(verified.requested, selection);
+  assert.deepEqual(verified.actualRequest, selectionA);
+  assert.equal(verified.actualRequestHeaderSeq, 1);
+});
+
+test('restored durable pin reinstalls scoped hooks while ordinary UI selection does not', async t => {
+  const harness = new CompanionHarness();
+  const pinned = harness.addAgent('session-restored');
+  const ordinary = harness.addAgent('session-ordinary');
+  pinned.session.append('model/selection', {
+    ...selectionA, codexSessionModelRouting: { owner: 'codex-subagent-dsh', protocol: 1 },
+  });
+  ordinary.session.append('model/selection', selectionB);
+  harness.start();
+  t.after(() => harness.dispose());
+  assert.deepEqual((await assembleRequest(pinned, selectionB)).request, { ...selectionA, messages: ['unchanged'] });
+  assert.equal(ordinary.listeners.size, 0);
+});

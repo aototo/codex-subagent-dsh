@@ -416,11 +416,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants2);
+          this.rhs = optimizeExpr(this.rhs, names, constants3);
         return this;
       }
       get names() {
@@ -437,10 +437,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants2);
+        this.rhs = optimizeExpr(this.rhs, names, constants3);
         return this;
       }
       get names() {
@@ -501,8 +501,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants2) {
-        this.code = optimizeExpr(this.code, names, constants2);
+      optimizeNames(names, constants3) {
+        this.code = optimizeExpr(this.code, names, constants3);
         return this;
       }
       get names() {
@@ -531,12 +531,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants2))
+          if (n.optimizeNames(names, constants3))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -589,12 +589,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         var _a3;
-        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants2);
-        if (!(super.optimizeNames(names, constants2) || this.else))
+        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants3);
+        if (!(super.optimizeNames(names, constants3) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants2);
+        this.condition = optimizeExpr(this.condition, names, constants3);
         return this;
       }
       get names() {
@@ -617,10 +617,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants2) {
-        if (!super.optimizeNames(names, constants2))
+      optimizeNames(names, constants3) {
+        if (!super.optimizeNames(names, constants3))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants2);
+        this.iteration = optimizeExpr(this.iteration, names, constants3);
         return this;
       }
       get names() {
@@ -656,10 +656,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants2) {
-        if (!super.optimizeNames(names, constants2))
+      optimizeNames(names, constants3) {
+        if (!super.optimizeNames(names, constants3))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants2);
+        this.iterable = optimizeExpr(this.iterable, names, constants3);
         return this;
       }
       get names() {
@@ -701,11 +701,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         var _a3, _b;
-        super.optimizeNames(names, constants2);
-        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants2);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants2);
+        super.optimizeNames(names, constants3);
+        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants3);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants3);
         return this;
       }
       get names() {
@@ -1006,7 +1006,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants2) {
+    function optimizeExpr(expr, names, constants3) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1021,14 +1021,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants2[n.str];
+        const c = constants3[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants3[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -3268,8 +3268,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path2) {
-      let input2 = path2;
+    function removeDotSegments(path3) {
+      let input2 = path3;
       const output2 = [];
       let nextSlash = -1;
       let len = 0;
@@ -3346,8 +3346,8 @@ var require_utils = __commonJS({
     var HOST_DELIMS = { "@": "%40", "/": "%2F", "?": "%3F", "#": "%23", ":": "%3A" };
     var HOST_DELIM_RE = /[@/?#:]/g;
     var HOST_DELIM_NO_COLON_RE = /[@/?#]/g;
-    function reescapeHostDelimiters(host, isIP) {
-      const re = isIP ? HOST_DELIM_NO_COLON_RE : HOST_DELIM_RE;
+    function reescapeHostDelimiters(host, isIP2) {
+      const re = isIP2 ? HOST_DELIM_NO_COLON_RE : HOST_DELIM_RE;
       re.lastIndex = 0;
       return host.replace(re, (ch) => HOST_DELIMS[ch]);
     }
@@ -3678,8 +3678,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path2 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path2 && path2 !== "/" ? path2 : void 0;
+        const path3 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path3 && path3 !== "/" ? path3 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -4036,8 +4036,8 @@ var require_fast_uri = __commonJS({
       const host = matches[4];
       return hasMalformedPercentEncoding(matches[3]) || host !== void 0 && !isIPLiteral(host) && hasMalformedPercentEncoding(host) || hasMalformedPercentEncoding(matches[6]) || hasMalformedPercentEncoding(matches[7]) || hasMalformedPercentEncoding(matches[8]);
     }
-    function canonicalizeHost(parsed, options, schemeHandler, isIP) {
-      if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport) && parsed.host && !isIPLiteral(parsed.host) && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP === false && nonSimpleDomain(parsed.host)) {
+    function canonicalizeHost(parsed, options, schemeHandler, isIP2) {
+      if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport) && parsed.host && !isIPLiteral(parsed.host) && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP2 === false && nonSimpleDomain(parsed.host)) {
         try {
           parsed.host = new URL("http://" + parsed.host).hostname;
         } catch (e) {
@@ -4064,7 +4064,7 @@ var require_fast_uri = __commonJS({
       let malformedHost = false;
       let malformedIPLiteral = false;
       let malformedScheme = false;
-      let isIP = false;
+      let isIP2 = false;
       if (options.reference === "suffix") {
         if (options.scheme) {
           uri = options.scheme + ":" + uri;
@@ -4127,15 +4127,15 @@ var require_fast_uri = __commonJS({
             const bracketedIPLiteral = isIPLiteral(parsed.host);
             const hasIPLiteralBracket = parsed.host.indexOf("[") !== -1 || parsed.host.indexOf("]") !== -1;
             const ipv6result = normalizeIPv6(parsed.host);
-            isIP = ipv6result.isIPV6 || ipv6result.isIPVFuture === true;
+            isIP2 = ipv6result.isIPV6 || ipv6result.isIPVFuture === true;
             malformedIPLiteral = hasIPLiteralBracket && (!bracketedIPLiteral || ipv6result.error === true);
-            parsed.host = isIP ? ipv6result.host : ipv6result.host.toLowerCase();
+            parsed.host = isIP2 ? ipv6result.host : ipv6result.host.toLowerCase();
             if (malformedIPLiteral) {
               parsed.error = parsed.error || "URI host is malformed.";
               malformedAuthorityOrPort = true;
             }
           } else {
-            isIP = true;
+            isIP2 = true;
           }
         }
         if (parsed.scheme === void 0 && parsed.userinfo === void 0 && parsed.host === void 0 && parsed.port === void 0 && parsed.query === void 0 && !parsed.path) {
@@ -4152,14 +4152,14 @@ var require_fast_uri = __commonJS({
         }
         const schemeHandler = getSchemeHandler(options.scheme || parsed.scheme);
         if (!malformedIPLiteral) {
-          malformedHost = canonicalizeHost(parsed, options, schemeHandler, isIP);
+          malformedHost = canonicalizeHost(parsed, options, schemeHandler, isIP2);
         }
         if (uri.indexOf("%") !== -1 && parsed.host !== void 0 && !malformedIPLiteral) {
-          let host = isIP ? parsed.host : normalizePercentEncoding(parsed.host, true);
-          if (!isIP) {
+          let host = isIP2 ? parsed.host : normalizePercentEncoding(parsed.host, true);
+          if (!isIP2) {
             host = normalizePercentEncoding(host.toLowerCase());
           }
-          parsed.host = reescapeHostDelimiters(host, isIP);
+          parsed.host = reescapeHostDelimiters(host, isIP2);
         }
         if (!schemeHandler || schemeHandler && !schemeHandler.skipNormalize) {
           if (parsed.path) {
@@ -10393,7 +10393,7 @@ var require_stream = __commonJS({
       };
       duplex._final = function(callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open3() {
+          ws.once("open", function open4() {
             duplex._final(callback);
           });
           return;
@@ -10414,7 +10414,7 @@ var require_stream = __commonJS({
       };
       duplex._write = function(chunk, encoding, callback) {
         if (ws.readyState === ws.CONNECTING) {
-          ws.once("open", function open3() {
+          ws.once("open", function open4() {
             duplex._write(chunk, encoding, callback);
           });
           return;
@@ -11249,8 +11249,8 @@ function getErrorMap() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path2, errorMaps, issueData } = params;
-  const fullPath = [...path2, ...issueData.path || []];
+  const { data, path: path3, errorMaps, issueData } = params;
+  const fullPath = [...path3, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -11365,11 +11365,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path2, key2) {
+  constructor(parent, value, path3, key2) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path2;
+    this._path = path3;
     this._key = key2;
   }
   get path() {
@@ -15323,10 +15323,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path2) {
-  if (!path2)
+function getElementAtPath(obj, path3) {
+  if (!path3)
     return obj;
-  return path2.reduce((acc, key2) => acc?.[key2], obj);
+  return path3.reduce((acc, key2) => acc?.[key2], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -15666,11 +15666,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path2, issues) {
+function prefixIssues(path3, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path2);
+    iss.path.unshift(path3);
     return iss;
   });
 }
@@ -16120,16 +16120,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path2 = []) => {
+  const processError = (error63, path3 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path2, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path3, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path3, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path3, ...issue2.path]);
       } else {
-        const fullpath = [...path2, ...issue2.path];
+        const fullpath = [...path3, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -16168,17 +16168,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path2 = []) => {
+  const processError = (error63, path3 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path2, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path3, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path3, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path2, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path3, ...issue2.path]);
       } else {
-        const fullpath = [...path2, ...issue2.path];
+        const fullpath = [...path3, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -16217,8 +16217,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path2 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path2) {
+  const path3 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path3) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -31733,11 +31733,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path2) {
-  if (path2.length === 0) {
+function getDotPath(path3) {
+  if (path3.length === 0) {
     return "object root";
   }
-  return path2.reduce((acc, seg, index) => {
+  return path3.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -33964,13 +33964,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path2 = ref.slice(1).split("/").filter(Boolean);
-  if (path2.length === 0) {
+  const path3 = ref.slice(1).split("/").filter(Boolean);
+  if (path3.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path2[0] === defsKey) {
-    const key2 = path2[1] === void 0 ? void 0 : decodeJSONPointerSegment(path2[1]);
+  if (path3[0] === defsKey) {
+    const key2 = path3[1] === void 0 ? void 0 : decodeJSONPointerSegment(path3[1]);
     if (!key2 || !ctx.defs[key2]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -37567,6 +37567,9 @@ var Protocol = class {
       this.setRequestHandler(GetTaskPayloadRequestSchema, async (request, extra) => {
         const handleTaskResult = async () => {
           const taskId = request.params.taskId;
+          if (!await this._taskStore.getTask(taskId, extra.sessionId)) {
+            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${taskId}`);
+          }
           if (this._taskMessageQueue) {
             let queuedMessage;
             while (queuedMessage = await this._taskMessageQueue.dequeue(taskId, extra.sessionId)) {
@@ -37597,12 +37600,12 @@ var Protocol = class {
             throw new McpError(ErrorCode.InvalidParams, `Task not found: ${taskId}`);
           }
           if (!isTerminal(task.status)) {
-            await this._waitForTaskUpdate(taskId, extra.signal);
+            await this._waitForTaskUpdate(taskId, extra.signal, extra.sessionId);
             return await handleTaskResult();
           }
           if (isTerminal(task.status)) {
             const result = await this._taskStore.getTaskResult(taskId, extra.sessionId);
-            this._clearTaskQueue(taskId);
+            this._clearTaskQueue(taskId, extra.sessionId);
             return {
               ...result,
               _meta: {
@@ -37639,7 +37642,7 @@ var Protocol = class {
             throw new McpError(ErrorCode.InvalidParams, `Cannot cancel task in terminal status: ${task.status}`);
           }
           await this._taskStore.updateTaskStatus(request.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
-          this._clearTaskQueue(request.params.taskId);
+          this._clearTaskQueue(request.params.taskId, extra.sessionId);
           const cancelledTask = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
           if (!cancelledTask) {
             throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request.params.taskId}`);
@@ -37767,6 +37770,19 @@ var Protocol = class {
     const handler = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
     const capturedTransport = this._transport;
     const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
+    const sessionId = capturedTransport?.sessionId;
+    const store2 = this._taskStore;
+    let relatedTaskFound = true;
+    let relatedTaskLookup;
+    if (relatedTaskId && store2 && this._taskMessageQueue && sessionId !== void 0) {
+      relatedTaskFound = false;
+      relatedTaskLookup = (async () => {
+        if (!await store2.getTask(relatedTaskId, sessionId)) {
+          throw new McpError(ErrorCode.InvalidParams, `Task not found: ${relatedTaskId}`);
+        }
+        relatedTaskFound = true;
+      })();
+    }
     if (handler === void 0) {
       const errorResponse = {
         jsonrpc: "2.0",
@@ -37776,7 +37792,10 @@ var Protocol = class {
           message: "Method not found"
         }
       };
-      if (relatedTaskId && this._taskMessageQueue) {
+      if (relatedTaskId && relatedTaskLookup) {
+        const queuedError = { type: "error", message: errorResponse, timestamp: Date.now() };
+        relatedTaskLookup.then(() => this._enqueueTaskMessage(relatedTaskId, queuedError, sessionId), () => capturedTransport?.send(errorResponse)).catch((error62) => this._onerror(new Error(`Failed to send an error response: ${error62}`)));
+      } else if (relatedTaskId && this._taskMessageQueue) {
         this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
           message: errorResponse,
@@ -37827,7 +37846,10 @@ var Protocol = class {
       closeSSEStream: extra?.closeSSEStream,
       closeStandaloneSSEStream: extra?.closeStandaloneSSEStream
     };
-    Promise.resolve().then(() => {
+    (relatedTaskLookup ?? Promise.resolve()).then(() => {
+      if (relatedTaskLookup && abortController.signal.aborted) {
+        throw new McpError(ErrorCode.ConnectionClosed, "Request was cancelled");
+      }
       if (taskCreationParams) {
         this.assertTaskHandlerCapability(request.method);
       }
@@ -37862,7 +37884,7 @@ var Protocol = class {
           ...error62["data"] !== void 0 && { data: error62["data"] }
         }
       };
-      if (relatedTaskId && this._taskMessageQueue) {
+      if (relatedTaskId && this._taskMessageQueue && relatedTaskFound) {
         await this._enqueueTaskMessage(relatedTaskId, {
           type: "error",
           message: errorResponse,
@@ -38342,7 +38364,7 @@ var Protocol = class {
       throw new Error("Cannot enqueue task message: taskStore and taskMessageQueue are not configured");
     }
     const maxQueueSize = this._options?.maxTaskQueueSize;
-    await this._taskMessageQueue.enqueue(taskId, message, sessionId, maxQueueSize);
+    await this._taskMessageQueue.enqueue(taskId, message, sessionId ?? this._transport?.sessionId, maxQueueSize);
   }
   /**
    * Clears the message queue for a task and rejects any pending request resolvers.
@@ -38371,12 +38393,13 @@ var Protocol = class {
    * Uses polling to check for updates at the task's configured poll interval.
    * @param taskId The task ID to wait for
    * @param signal Abort signal to cancel the wait
+   * @param sessionId Session of the request that waits, passed to the task store
    * @returns Promise that resolves when an update occurs or rejects if aborted
    */
-  async _waitForTaskUpdate(taskId, signal) {
+  async _waitForTaskUpdate(taskId, signal, sessionId) {
     let interval = this._options?.defaultTaskPollInterval ?? 1e3;
     try {
-      const task = await this._taskStore?.getTask(taskId);
+      const task = await this._taskStore?.getTask(taskId, sessionId);
       if (task?.pollInterval) {
         interval = task.pollInterval;
       }
@@ -39255,6 +39278,42 @@ var ExperimentalMcpServerTasks = class {
 };
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
+function toolInputElementCount(value, max) {
+  let count = 0;
+  const stack = [value];
+  while (stack.length > 0) {
+    const node2 = stack.pop();
+    if (node2 === null || typeof node2 !== "object")
+      continue;
+    if (Array.isArray(node2)) {
+      for (const child of node2) {
+        if (++count > max)
+          return count;
+        if (child !== null && typeof child === "object")
+          stack.push(child);
+      }
+    } else {
+      for (const key2 in node2) {
+        if (!Object.prototype.hasOwnProperty.call(node2, key2))
+          continue;
+        if (++count > max)
+          return count;
+        const child = node2[key2];
+        if (child !== null && typeof child === "object")
+          stack.push(child);
+      }
+    }
+  }
+  return count;
+}
+function resolveMaxToolInputElements(value) {
+  if (value === void 0 || value === Infinity)
+    return void 0;
+  if (typeof value !== "number" || Number.isNaN(value) || value < 1) {
+    throw new RangeError(`maxToolInputElements must be a number of at least 1, or Infinity, got ${String(value)}`);
+  }
+  return value;
+}
 var McpServer = class {
   constructor(serverInfo, options) {
     this._registeredResources = {};
@@ -39266,6 +39325,7 @@ var McpServer = class {
     this._resourceHandlersInitialized = false;
     this._promptHandlersInitialized = false;
     this.server = new Server(serverInfo, options);
+    this._maxToolInputElements = resolveMaxToolInputElements(options?.maxToolInputElements);
   }
   /**
    * Access experimental features.
@@ -39396,12 +39456,15 @@ var McpServer = class {
    * Validates tool input arguments against the tool's input schema.
    */
   async validateToolInput(tool, args, toolName) {
+    if (this._maxToolInputElements !== void 0 && toolInputElementCount(args, this._maxToolInputElements) > this._maxToolInputElements) {
+      throw new McpError(ErrorCode.InvalidParams, `Invalid arguments for tool ${toolName}: arguments contain more than the maximum of ${this._maxToolInputElements} elements`);
+    }
     if (!tool.inputSchema) {
       return void 0;
     }
     const inputObj = normalizeObjectSchema(tool.inputSchema);
     const schemaToParse = inputObj ?? tool.inputSchema;
-    const parseResult = await safeParseAsync2(schemaToParse, args);
+    const parseResult = await safeParseAsync2(schemaToParse, args ?? {});
     if (!parseResult.success) {
       const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
       const errorMessage = getParseErrorMessage(error62);
@@ -39639,7 +39702,7 @@ var McpServer = class {
       }
       if (prompt.argsSchema) {
         const argsObj = normalizeObjectSchema(prompt.argsSchema);
-        const parseResult = await safeParseAsync2(argsObj, request.params.arguments);
+        const parseResult = await safeParseAsync2(argsObj, request.params.arguments ?? {});
         if (!parseResult.success) {
           const error62 = "error" in parseResult ? parseResult.error : "Unknown error";
           const errorMessage = getParseErrorMessage(error62);
@@ -40161,6 +40224,9 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 var DEFAULT_ORIGIN = "http://127.0.0.1:3080";
 var DEFAULT_STATE_DIR = resolve(homedir(), ".codex-subagent-dsh");
+function desktopStateDir(stateDir) {
+  return resolve(stateDir, "codex-desktop");
+}
 function isLoopbackHostname(hostname3) {
   if (hostname3 === "localhost" || hostname3 === "[::1]") return true;
   const parts = hostname3.split(".");
@@ -40180,7 +40246,11 @@ function normalizeLoopbackOrigin(value) {
 }
 function loadConfig(env = process.env) {
   const configuredHome = env.DSH_SUBAGENT_HOME?.trim();
+  const connectionMode2 = env.DSH_CONNECTION_MODE?.trim() || (env.DSH_SUBAGENT_URL?.trim() ? "web" : "auto");
+  if (!["auto", "web", "desktop"].includes(connectionMode2)) throw new Error("DSH_CONNECTION_MODE must be auto, web, or desktop");
   return {
+    connectionMode: connectionMode2,
+    expectedDshHome: resolve(env.DSH_HOME?.trim() || resolve(homedir(), ".dsh")),
     origin: normalizeLoopbackOrigin(env.DSH_SUBAGENT_URL?.trim() || DEFAULT_ORIGIN),
     stateDir: resolve(configuredHome || DEFAULT_STATE_DIR),
     rpcTimeoutMs: 1e4,
@@ -40188,6 +40258,196 @@ function loadConfig(env = process.env) {
     maxWaitMs: 2e4
   };
 }
+
+// src/dsh-endpoint.ts
+import { constants } from "node:fs";
+import { lstat, open as open2 } from "node:fs/promises";
+import { connect, isIP } from "node:net";
+import { homedir as homedir2 } from "node:os";
+import path from "node:path";
+var EndpointError = class extends Error {
+  constructor(code, nextAction, message) {
+    super(message);
+    this.code = code;
+    this.nextAction = nextAction;
+  }
+  code;
+  nextAction;
+};
+var MAX_METADATA_BYTES = 16 * 1024;
+function localOrigin(value) {
+  if (typeof value !== "string") throw new Error("DSH \u5730\u5740\u5FC5\u987B\u662F\u672C\u673A HTTP origin");
+  let url2;
+  try {
+    url2 = new URL(value);
+  } catch {
+    throw new Error("DSH \u5730\u5740\u5FC5\u987B\u662F\u672C\u673A HTTP origin");
+  }
+  const hostname3 = url2.hostname.replace(/^\[|\]$/g, "");
+  const loopback = hostname3 === "localhost" || hostname3 === "::1" || isIP(hostname3) === 4 && hostname3.startsWith("127.");
+  if (url2.protocol !== "http:" || !loopback || url2.username || url2.password || url2.pathname !== "/" || url2.search || url2.hash || !/^http:\/\/[^/?#]+\/?$/.test(value)) {
+    throw new Error("DSH \u5730\u5740\u5FC5\u987B\u662F\u65E0\u8DEF\u5F84\u3001\u53C2\u6570\u6216\u51ED\u636E\u7684\u672C\u673A HTTP origin");
+  }
+  return url2.origin;
+}
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error62) {
+    return error62.code === "EPERM";
+  }
+}
+function probeTcp(origin, timeoutMs) {
+  const url2 = new URL(origin);
+  return new Promise((resolve3) => {
+    const socket = connect({
+      host: url2.hostname.replace(/^\[|\]$/g, ""),
+      port: Number(url2.port || (url2.protocol === "https:" ? 443 : 80))
+    });
+    const finish = (reachable) => {
+      socket.destroy();
+      resolve3(reachable);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+  });
+}
+async function readDesktopMetadata(options, deps) {
+  const directoryPath = desktopStateDir(options.stateDir);
+  const metadataPath = path.join(directoryPath, "desktop-connection.json");
+  const uid = deps.uid ?? process.getuid?.();
+  let content2;
+  try {
+    for (const entry of [options.stateDir, directoryPath]) {
+      const directory = await lstat(entry);
+      if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== uid || (directory.mode & 18) !== 0) {
+        throw new Error("\u684C\u9762\u8FDE\u63A5\u76EE\u5F55\u5FC5\u987B\u5F52\u5F53\u524D\u7528\u6237\u6240\u6709\uFF0C\u4E0D\u80FD\u4E3A\u7B26\u53F7\u94FE\u63A5\u6216\u5141\u8BB8\u5176\u4ED6\u7528\u6237\u5199\u5165");
+      }
+    }
+    const before = await lstat(metadataPath);
+    if (!before.isFile() || before.isSymbolicLink()) {
+      throw new Error("\u684C\u9762\u53D1\u73B0\u6587\u4EF6\u5FC5\u987B\u662F\u666E\u901A\u6587\u4EF6\uFF0C\u4E0D\u80FD\u4F7F\u7528\u7B26\u53F7\u94FE\u63A5");
+    }
+    const file2 = await open2(metadataPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const stat2 = await file2.stat();
+      if (!stat2.isFile() || stat2.ino !== before.ino || stat2.dev !== before.dev) {
+        throw new Error("\u684C\u9762\u53D1\u73B0\u6587\u4EF6\u5728\u8BFB\u53D6\u671F\u95F4\u53D1\u751F\u53D8\u5316");
+      }
+      if (uid === void 0 || stat2.uid !== uid || (stat2.mode & 4095) !== 384) {
+        throw new Error("\u684C\u9762\u53D1\u73B0\u6587\u4EF6\u5FC5\u987B\u5F52\u5F53\u524D\u7528\u6237\u6240\u6709\u4E14\u6743\u9650\u4E3A 0600");
+      }
+      if (stat2.size > MAX_METADATA_BYTES) throw new Error("\u684C\u9762\u53D1\u73B0\u6587\u4EF6\u8D85\u8FC7 16 KiB");
+      const buffer = Buffer.alloc(MAX_METADATA_BYTES + 1);
+      const { bytesRead } = await file2.read(buffer, 0, buffer.length, 0);
+      if (bytesRead > MAX_METADATA_BYTES) throw new Error("\u684C\u9762\u53D1\u73B0\u6587\u4EF6\u8D85\u8FC7 16 KiB");
+      content2 = buffer.subarray(0, bytesRead).toString("utf8");
+    } finally {
+      await file2.close();
+    }
+  } catch (error62) {
+    const code = error62.code;
+    if (code === "ENOENT") {
+      throw new EndpointError("DESKTOP_DISCOVERY_MISSING", "install_or_authorize_desktop_bridge", "\u672A\u627E\u5230 DSH \u684C\u9762\u8FDE\u63A5\u4FE1\u606F\uFF1A\u542F\u52A8\u684C\u9762\u7AEF\uFF0C\u5728\u5176\u8FDE\u63A5\u7EC4\u4EF6\u4E2D\u6388\u6743\uFF1B\u82E5\u672A\u5B89\u88C5\u7EC4\u4EF6\uFF0C\u5148\u6309\u63D2\u4EF6\u5B89\u88C5\u8BF4\u660E\u5B89\u88C5\u3002");
+    }
+    if (code) throw new Error("\u65E0\u6CD5\u5B89\u5168\u8BFB\u53D6 DSH \u684C\u9762\u8FDE\u63A5\u4FE1\u606F\uFF0C\u8BF7\u68C0\u67E5\u6587\u4EF6\u6743\u9650");
+    throw error62;
+  }
+  let metadata;
+  try {
+    const parsed = JSON.parse(content2);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+    metadata = parsed;
+  } catch {
+    throw new Error("DSH \u684C\u9762\u8FDE\u63A5\u4FE1\u606F\u683C\u5F0F\u65E0\u6548");
+  }
+  if (metadata.consumer !== "codex-subagent-dsh" || metadata.version !== 1 || typeof metadata.instanceId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(metadata.instanceId) || !Number.isSafeInteger(metadata.pid) || metadata.pid <= 0 || typeof metadata.approvedAt !== "string" || !Number.isFinite(Date.parse(metadata.approvedAt))) throw new Error("DSH \u684C\u9762\u8FDE\u63A5\u4FE1\u606F\u7248\u672C\u3001\u8FDB\u7A0B\u6216\u6388\u6743\u65F6\u95F4\u65E0\u6548");
+  const expectedHome = options.expectedDshHome ?? path.join(homedir2(), ".dsh");
+  if (typeof metadata.dshHome !== "string" || !path.isAbsolute(metadata.dshHome) || !path.isAbsolute(expectedHome) || path.resolve(metadata.dshHome) !== path.resolve(expectedHome)) throw new Error("DSH \u684C\u9762\u6570\u636E\u76EE\u5F55\u4E0D\u5339\u914D\uFF0C\u62D2\u7EDD\u8FDE\u63A5\u5230\u4E0D\u540C\u5B58\u50A8");
+  const origin = localOrigin(metadata.origin);
+  if (!await (deps.isAlive ?? processIsAlive)(metadata.pid)) {
+    throw new EndpointError("DESKTOP_DISCOVERY_STALE", "reauthorize_desktop_bridge", "DSH \u684C\u9762\u8FDE\u63A5\u4FE1\u606F\u5DF2\u5931\u6548\uFF1A\u5BA2\u6237\u7AEF\u8FDB\u7A0B\u4E0D\u5B58\u5728\u3002\u542F\u52A8\u684C\u9762\u7AEF\u5E76\u91CD\u65B0\u6388\u6743\u8FDE\u63A5\u7EC4\u4EF6\u3002");
+  }
+  return { origin, instanceId: metadata.instanceId, pid: metadata.pid };
+}
+async function readDesktopOrigin(options, deps = {}) {
+  try {
+    return await readDesktopMetadata(options, deps);
+  } catch (error62) {
+    if (error62 instanceof EndpointError) throw error62;
+    throw new EndpointError("DESKTOP_DISCOVERY_INVALID", "repair_desktop_bridge_discovery", error62 instanceof Error ? error62.message : "DSH \u684C\u9762\u8FDE\u63A5\u4FE1\u606F\u65E0\u6548");
+  }
+}
+async function resolveDshEndpoint(options, deps = {}) {
+  if (!["web", "desktop", "auto"].includes(options.mode)) {
+    throw new Error("DSH \u8FDE\u63A5\u6A21\u5F0F\u5FC5\u987B\u4E3A web\u3001desktop \u6216 auto");
+  }
+  const timeoutMs = options.timeoutMs ?? 1500;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("DSH \u8FDE\u63A5\u63A2\u6D4B\u8D85\u65F6\u5FC5\u987B\u4E3A\u6B63\u6574\u6570");
+  }
+  const probe = deps.probe ?? probeTcp;
+  if (options.mode === "web") return { origin: normalizeLoopbackOrigin(options.webUrl), mode: "web" };
+  if (options.mode !== "desktop") {
+    const origin2 = normalizeLoopbackOrigin(options.webUrl);
+    if (await probe(origin2, timeoutMs)) return { origin: origin2, mode: "web" };
+  }
+  const desktop = await readDesktopOrigin(options, deps);
+  const { origin } = desktop;
+  if (!await probe(origin, timeoutMs)) {
+    throw new EndpointError("DESKTOP_UNREACHABLE", "start_desktop_and_authorize_bridge", "DSH \u684C\u9762\u7AEF\u53E3\u4E0D\u53EF\u8FBE\uFF0C\u8BF7\u542F\u52A8\u5BA2\u6237\u7AEF\u5E76\u68C0\u67E5\u8FDE\u63A5\u7EC4\u4EF6\uFF1B\u4E0D\u4F1A\u81EA\u52A8\u91CD\u542F\u5BA2\u6237\u7AEF\u3002");
+  }
+  return { ...desktop, mode: "desktop" };
+}
+
+// src/connection.ts
+var EndpointBinding = class {
+  constructor(config3, deps = {}) {
+    this.deps = deps;
+    this.options = { mode: config3.connectionMode ?? "web", webUrl: config3.origin, stateDir: config3.stateDir, expectedDshHome: config3.expectedDshHome };
+  }
+  deps;
+  selected;
+  pending;
+  pendingMode;
+  options;
+  get current() {
+    return this.selected;
+  }
+  conflict() {
+    return new EndpointError("DSH_BACKEND_BOUND", "open_new_conversation", "This MCP process already selected a DSH backend. Open a new Codex conversation and select the desired mode first; existing tasks will not move or be resubmitted.");
+  }
+  async get(mode) {
+    if (this.selected && mode && mode !== "auto" && mode !== this.selected.mode) throw this.conflict();
+    if (!this.selected) {
+      if (this.pending && mode && mode !== "auto" && this.pendingMode !== mode) throw this.conflict();
+      if (!this.pending) {
+        this.pendingMode = mode ?? this.options.mode;
+        this.pending = resolveDshEndpoint({ ...this.options, mode: this.pendingMode }, this.deps);
+      }
+      const pending = this.pending;
+      try {
+        this.selected = await pending;
+      } finally {
+        if (this.pending === pending) {
+          this.pending = void 0;
+          this.pendingMode = void 0;
+        }
+      }
+    }
+    if (mode && mode !== "auto" && mode !== this.selected.mode) throw this.conflict();
+    if (this.selected.mode === "desktop") {
+      const current = await readDesktopOrigin(this.options, this.deps);
+      if (current.origin !== this.selected.origin || current.pid !== this.selected.pid || current.instanceId !== this.selected.instanceId) {
+        throw new EndpointError("DESKTOP_INSTANCE_CHANGED", "open_new_conversation", "DSH desktop instance changed. Open a new Codex conversation; this process will not switch task backends. Inspect unknown tasks in their original DSH session before resubmitting anything.");
+      }
+    }
+    return this.selected;
+  }
+};
 
 // src/dsh-client.ts
 import { randomUUID } from "node:crypto";
@@ -40206,8 +40466,8 @@ var wrapper_default = import_websocket.default;
 
 // src/auth.ts
 import { createHash, randomBytes } from "node:crypto";
-import { constants } from "node:fs";
-import { chmod, lstat, mkdir, open as open2, rename, rm } from "node:fs/promises";
+import { constants as constants2 } from "node:fs";
+import { chmod, lstat as lstat2, mkdir, open as open3, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 var CREDENTIAL_VERSION = 1;
 var CREDENTIAL_DIRECTORY = "credentials";
@@ -40235,14 +40495,14 @@ function checkedOrigin(config3) {
 }
 async function ensurePrivateDirectories(config3) {
   await mkdir(config3.stateDir, { recursive: true, mode: 448 });
-  const stateInfo = await lstat(config3.stateDir);
+  const stateInfo = await lstat2(config3.stateDir);
   if (!stateInfo.isDirectory() || stateInfo.isSymbolicLink()) {
     throw new DshAuthError("CREDENTIAL_DIRECTORY_INVALID", "The DSH credential directory is not a private local directory");
   }
   await chmod(config3.stateDir, 448);
   const directory = join(config3.stateDir, CREDENTIAL_DIRECTORY);
   await mkdir(directory, { recursive: true, mode: 448 });
-  const credentialInfo = await lstat(directory);
+  const credentialInfo = await lstat2(directory);
   if (!credentialInfo.isDirectory() || credentialInfo.isSymbolicLink()) {
     throw new DshAuthError("CREDENTIAL_DIRECTORY_INVALID", "The DSH credential directory is not a private local directory");
   }
@@ -40270,7 +40530,7 @@ async function saveCredential(config3, credential) {
   const temporary = join(directory, `.credential-${process.pid}-${randomBytes(8).toString("hex")}.tmp`);
   let handle;
   try {
-    handle = await open2(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 384);
+    handle = await open3(temporary, constants2.O_CREAT | constants2.O_EXCL | constants2.O_WRONLY, 384);
     await handle.writeFile(`${JSON.stringify(credential)}
 `, "utf8");
     await handle.sync();
@@ -40284,25 +40544,25 @@ async function saveCredential(config3, credential) {
   }
 }
 async function loadCredential(config3) {
-  const path2 = credentialPath(config3);
+  const path3 = credentialPath(config3);
   try {
-    const stateInfo = await lstat(config3.stateDir);
+    const stateInfo = await lstat2(config3.stateDir);
     if (!stateInfo.isDirectory() || stateInfo.isSymbolicLink()) {
       throw new DshAuthError("CREDENTIAL_DIRECTORY_INVALID", "The DSH credential directory is not a private local directory");
     }
     await chmod(config3.stateDir, 448);
     const directory = join(config3.stateDir, CREDENTIAL_DIRECTORY);
-    const credentialInfo = await lstat(directory);
+    const credentialInfo = await lstat2(directory);
     if (!credentialInfo.isDirectory() || credentialInfo.isSymbolicLink()) {
       throw new DshAuthError("CREDENTIAL_DIRECTORY_INVALID", "The DSH credential directory is not a private local directory");
     }
     await chmod(directory, 448);
-    const info = await lstat(path2);
+    const info = await lstat2(path3);
     if (!info.isFile() || info.isSymbolicLink()) {
       throw new DshAuthError("CREDENTIAL_INVALID", "Saved DSH credential is invalid; reconnect is required");
     }
-    await chmod(path2, 384);
-    const handle = await open2(path2, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    await chmod(path3, 384);
+    const handle = await open3(path3, constants2.O_RDONLY | (constants2.O_NOFOLLOW ?? 0));
     try {
       const openedInfo = await handle.stat();
       if (!openedInfo.isFile() || openedInfo.size > MAX_CREDENTIAL_BYTES) {
@@ -40786,13 +41046,13 @@ var PairingClient = class {
     this.#config = { ...config3, origin: normalizeLoopbackOrigin(config3.origin) };
     this.#deps = { fetch: dependencies.fetch ?? nativeFetch, openBrowser: dependencies.openBrowser ?? openBrowser, now: dependencies.now ?? Date.now, saveCredential: dependencies.saveCredential ?? saveCredential };
   }
-  async #request(path2, body, cookie) {
+  async #request(path3, body, cookie) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.#config.rpcTimeoutMs);
     try {
       const serialized = body === void 0 ? void 0 : JSON.stringify(body);
       if (serialized && Buffer.byteLength(serialized) > MAX_BYTES) throw new Failure("invalid_response");
-      const response = await this.#deps.fetch(new URL(path2, this.#config.origin), {
+      const response = await this.#deps.fetch(new URL(path3, this.#config.origin), {
         method: body === void 0 ? "GET" : "POST",
         redirect: "manual",
         signal: controller.signal,
@@ -41211,7 +41471,7 @@ function pidExists(pid) {
 // src/task-manager.ts
 import { createHash as createHash3, randomUUID as randomUUID2 } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
-import path from "node:path";
+import path2 from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -41539,7 +41799,7 @@ var TaskManager = class {
     const cwd = await realpath(input2.cwd);
     if (!(await stat(cwd)).isDirectory()) throw new Error("cwd must be an existing directory");
     for (const allowed of input2.allowedPaths ?? []) {
-      if (path.isAbsolute(allowed) || allowed.split(/[\\/]/).includes("..")) throw new Error("allowedPaths must be workspace-relative paths without ..");
+      if (path2.isAbsolute(allowed) || allowed.split(/[\\/]/).includes("..")) throw new Error("allowedPaths must be workspace-relative paths without ..");
     }
     if (input2.mode === "write") {
       if (!input2.baselineCommit || !/^[a-f0-9]{40}$/i.test(input2.baselineCommit)) throw new Error("write tasks require a full baselineCommit");
@@ -41558,7 +41818,7 @@ var TaskManager = class {
       if (root !== cwd) throw new Error("write cwd must be the linked worktree root");
       const gitDir = await git("rev-parse", "--absolute-git-dir");
       const commonDir = await git("rev-parse", "--git-common-dir");
-      if (await realpath(gitDir) === await realpath(path.resolve(cwd, commonDir))) throw new Error("write tasks require a separate Git linked worktree");
+      if (await realpath(gitDir) === await realpath(path2.resolve(cwd, commonDir))) throw new Error("write tasks require a separate Git linked worktree");
       if (await git("rev-parse", "HEAD") !== input2.baselineCommit.toLowerCase()) throw new Error("baselineCommit does not match worktree HEAD");
       if (await git("status", "--porcelain")) throw new Error("write worktree must be clean before delegation");
     }
@@ -42021,11 +42281,33 @@ ${i.acceptanceCriteria.map((s) => "- " + s).join("\n")}`,
 // src/mcp-server.ts
 var config2 = loadConfig();
 var store = new TaskStore(config2.stateDir);
-var manager = new TaskManager(config2, new DshClient(config2), store);
-var pairing = new PairingClient(config2);
-var server = new McpServer({ name: "codex-subagent-dsh", version: "0.4.0" });
+var binding = new EndpointBinding(config2);
+var manager;
+var pairing;
+var selectedMode;
+async function ensureConnection(mode) {
+  const endpoint = await binding.get(mode);
+  if (!manager) {
+    const boundConfig = { ...config2, origin: endpoint.origin, stateDir: endpoint.mode === "desktop" ? desktopStateDir(config2.stateDir) : config2.stateDir };
+    manager = new TaskManager(boundConfig, new DshClient(boundConfig), store);
+    pairing = new PairingClient(boundConfig);
+    selectedMode = endpoint.mode;
+  }
+}
+function desktopStatus(status) {
+  const { connectCommand: _unused, ...result } = status;
+  return { ...result, connectionMode: "desktop", ..."modelRouting" in status && status.modelRouting && !status.modelRouting.available ? { modelRouting: { ...status.modelRouting, guidance: "Desktop model routing is unavailable in the selected instance. Check the compatibility guide and install or enable its verified model-routing companion through Desktop plugin management, then call dsh_status with includeModels=true. Do not change the shared default model or silently omit the requested selection." } } : {}, ...status.state === "authentication_required" ? {
+    nextAction: "authorize_desktop_bridge",
+    guidance: "Open the DSH desktop connection bridge permission UI and explicitly authorize this connection. If the bridge is missing, install it with user authorization first. Never approve for the user. Then check again."
+  } : status.state === "dsh_not_running" ? {
+    nextAction: "restart_conversation_after_desktop_ready",
+    guidance: "Start DSH desktop and authorize its connection bridge, then open a new Codex conversation. The selected backend will not change in this process."
+  } : {} };
+}
+var server = new McpServer({ name: "codex-subagent-dsh", version: "0.5.0" });
 var connectCommand = `node ${JSON.stringify(fileURLToPath(new URL("./connect.mjs", import.meta.url)))}`;
 var key = external_exports.string().min(1).max(128);
+var connectionMode = external_exports.enum(["auto", "web", "desktop"]).optional().describe("Select a backend on the first call. auto prefers reachable Web, then authorized Desktop. Once selected, changing backend requires a new Codex conversation.");
 var scope = { conversationKey: key, taskId: external_exports.string().uuid() };
 var content = (value) => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
 function view(task) {
@@ -42043,7 +42325,23 @@ function view(task) {
     acceptance: "not_assessed_by_plugin"
   };
 }
-async function guarded(work) {
+async function guarded(work, mode) {
+  try {
+    await ensureConnection(mode);
+  } catch (error62) {
+    const message = error62 instanceof Error ? error62.message.slice(0, 400) : "DSH endpoint discovery failed";
+    return content({
+      message,
+      connected: false,
+      state: "connection_unavailable",
+      code: error62 instanceof EndpointError ? error62.code : "DSH_ENDPOINT_UNAVAILABLE",
+      nextAction: error62 instanceof EndpointError ? error62.nextAction : "check_dsh_connection",
+      requestedMode: mode ?? config2.connectionMode,
+      connectionMode: binding.current?.mode,
+      origin: binding.current?.origin,
+      guidance: "No task was sent and no backend was switched. In auto mode Web is checked first; if unavailable, Desktop requires a valid user-authorized connection bridge. Never resubmit an unknown task just because a new connection succeeds."
+    });
+  }
   try {
     return content(await work());
   } catch (error62) {
@@ -42052,18 +42350,27 @@ async function guarded(work) {
     return { ...content({ error: typeof code === "string" ? code : "REQUEST_FAILED", message: message.slice(0, 400), guidance: "Check dsh_status for connection guidance. Do not paste login links or credentials into chat." }), isError: true };
   }
 }
-server.registerTool("dsh_status", { description: "Check whether local DSH is running and authenticated without creating a task. Set includeModels to discover sanitized provider/model/effort routes from the optional companion. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.", inputSchema: { includeModels: external_exports.boolean().default(false) }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input2) => guarded(async () => {
-  const status = await manager.status(connectCommand, input2.includeModels);
+server.registerTool("dsh_status", { description: "Select connectionMode=auto/web/desktop on the first call; the process then stays bound to that backend. Check whether local DSH is running and authenticated without creating a task. Set includeModels to discover sanitized provider/model/effort routes from the optional companion. Returns a precise next action and installed connect command when setup is required. DSH is one optional execution backend; the main agent decides whether to use DSH or native Codex subagents.", inputSchema: { includeModels: external_exports.boolean().default(false), connectionMode }, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } }, (input2) => guarded(async () => {
+  const rawStatus = await manager.status(connectCommand, input2.includeModels);
+  const status = { ...rawStatus, connectionMode: selectedMode, capabilities: { taskConnection: rawStatus.connected, authorization: selectedMode === "desktop" ? "desktop_bridge" : "web_pairing_or_terminal", modelSelection: "modelRouting" in rawStatus ? rawStatus.modelRouting?.available === true : "not_checked" } };
+  if (selectedMode === "desktop") return desktopStatus(status);
   if (status.state !== "authentication_required") return status;
   const capability = await pairing.status();
   if (!capability.available && capability.state !== "pairing_unsupported") return { ...status, pairing: capability, nextAction: capability.state === "dsh_not_running" ? "start_dsh" : "check_connection", guidance: capability.nextAction };
   return { ...status, pairing: capability, nextAction: capability.available ? "connect_in_browser" : "install_or_update_companion", guidance: capability.available ? "Ask the user to start browser pairing with dsh_connect, compare the matching code, and confirm in their logged-in DSH browser. Never approve for them." : "Install or update the bundled DSH companion in this profile for browser pairing. The returned connectCommand remains a terminal fallback." };
-}));
+}, input2.connectionMode));
 server.registerTool("dsh_connect", {
-  description: "Start, check, or cancel browser pairing with the running local DSH. Start opens a confirmation page once (openBrowser=false returns its URL). Show the matching code and wait for the user to allow or reject in their logged-in DSH browser; never click approval for them. Check after their response. Pairing credentials stay inside the runtime. Does not create an agent task, install a companion, or change execution permissions.",
-  inputSchema: { action: external_exports.enum(["start", "check", "cancel"]).default("start"), openBrowser: external_exports.boolean().default(true) },
+  description: "For desktop DSH, start/check verifies the existing explicitly authorized desktop bridge connection; if needed guide the user to its permission UI. Desktop cancel leaves credentials/tasks unchanged. For Web DSH, start, check, or cancel browser pairing with the running local DSH. Start opens a confirmation page once (openBrowser=false returns its URL). Show the matching code and wait for the user to allow or reject in their logged-in DSH browser; never click approval for them. Check after their response. Pairing credentials stay inside the runtime. Does not create an agent task, install a companion, or change execution permissions.",
+  inputSchema: { action: external_exports.enum(["start", "check", "cancel"]).default("start"), openBrowser: external_exports.boolean().default(true), connectionMode },
   annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
-}, (input2) => guarded(() => pairing.connect(input2.action, input2.openBrowser)));
+}, (input2) => guarded(async () => {
+  if (selectedMode === "desktop") {
+    if (input2.action === "cancel") return { state: "no_pending_pairing", connectionMode: "desktop", guidance: "No browser pairing is pending. Saved credentials and running tasks are unchanged." };
+    const status = desktopStatus(await manager.status(connectCommand));
+    return { ...status, capabilities: { taskConnection: status.connected, authorization: "desktop_bridge", modelSelection: "not_checked" } };
+  }
+  return { ...await pairing.connect(input2.action, input2.openBrowser), connectionMode: selectedMode, origin: manager.client.origin };
+}, input2.connectionMode));
 server.registerTool("dsh_submit", {
   description: "Delegate one bounded task to a new local DSH session. Use a stable conversationKey and requestId; duplicates do not resubmit. Optional modelSelection pins one exact provider/model/effort to this Session before its first prompt and requires the DSH companion. Main agent retains final acceptance. Write mode requires a clean, separate Git linked worktree and its HEAD baseline. Read mode is a task instruction, not a sandbox.",
   inputSchema: { conversationKey: key, requestId: key, goal: external_exports.string().min(1).max(16e3), context: external_exports.string().max(32e3).optional(), cwd: external_exports.string().min(1).max(4096), mode: external_exports.enum(["read", "write"]), allowedPaths: external_exports.array(external_exports.string().min(1).max(4096)).max(100).optional(), acceptanceCriteria: external_exports.array(external_exports.string().min(1).max(2e3)).min(1).max(30), baselineCommit: external_exports.string().regex(/^[a-fA-F0-9]{40}$/).optional(), modelSelection: external_exports.object({ provider: external_exports.string().min(1).max(256), model: external_exports.string().min(1).max(256), reasoningEffort: external_exports.string().min(1).max(256).optional() }).strict().optional() },
@@ -42075,8 +42382,8 @@ var closing = false;
 async function close() {
   if (closing) return;
   closing = true;
-  manager.shutdown();
-  await pairing.shutdown();
+  manager?.shutdown();
+  await pairing?.shutdown();
   await server.close().catch(() => {
   });
   store.close();
