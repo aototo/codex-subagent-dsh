@@ -7,7 +7,7 @@ import { build } from 'esbuild';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outdir = path.join(repoRoot, 'plugins', 'codex-subagent-dsh', 'runtime');
-const companionOutdir = path.join(repoRoot, 'plugins', 'codex-subagent-dsh', 'dsh-companion');
+const companionOutdir = path.join(repoRoot, 'plugins', 'codex-subagent-dsh', 'dsh-plugin');
 const externals = [...new Set(
   builtinModules.flatMap((name) => {
     const bareName = name.replace(/^node:/, '');
@@ -44,7 +44,7 @@ const result = await build({
 
 await build({
   absWorkingDir: repoRoot,
-  entryPoints: { index: 'src/dsh-companion.ts' },
+  entryPoints: { index: 'src/dsh-plugin.ts' },
   outdir: companionOutdir,
   outExtension: { '.js': '.mjs' },
   entryNames: '[name]',
@@ -73,3 +73,5 @@ for (const packageName of [...packageRoots].sort()) {
   for (const name of files.sort()) notices.push(`### ${name}`, '', await readFile(path.join(directory, name), 'utf8'), '');
 }
 await writeFile(path.join(outdir, 'THIRD_PARTY_NOTICES.md'), notices.join('\n'));
+
+await writeFile(path.join(companionOutdir, 'client.js'), (await readFile(path.join(repoRoot, 'src/desktop-bridge/client.js'), 'utf8')).replace('@aototo/codex-subagent-dsh-desktop-bridge', '@aototo/codex-subagent-dsh'));

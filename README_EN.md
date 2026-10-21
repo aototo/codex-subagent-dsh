@@ -8,29 +8,29 @@ The repository provides both a Codex marketplace entry and ready-to-run plugin a
 
 0.4.0 adds browser-confirmed connection without a terminal command or login-link copy. See the [release notes](docs/RELEASE_NOTES_0.4.0.md).
 
-## Web and Desktop (0.5.0)
+## Web and Desktop (0.6.0 development)
 
-0.5.0 adds Desktop connection, per-task model and reasoning selection, and coexistence with the Aotu assistant. It bundles desktop bridge 0.1.1 and companion 0.4.1. Until this PR is merged, GitHub `main` remains at 0.4.0; the Desktop capabilities below require 0.5.0.
+0.6.0 combines Desktop authorization, Web pairing, and session model routing into one DSH plugin: `@aototo/codex-subagent-dsh`. Install one plugin in Codex and one in DSH. The bundled DSH directory is `dsh-plugin`. GitHub main is currently 0.5.0; these changes are not released.
 
 | DSH type | Companion component | First connection |
 |---|---|---|
-| Web | `dsh-companion`, using a verified version combination | Ask Codex to connect to Web DSH; compare the code and allow in the logged-in browser |
-| Desktop | Bundled `dsh-desktop-bridge` | Install and enable the bridge in Desktop, explicitly allow the connection, then ask Codex to connect to Desktop DSH |
+| Web | `dsh-plugin`, using a verified version combination | Ask Codex to connect to Web DSH; compare the code and allow in the logged-in browser |
+| Desktop | Bundled `dsh-plugin` | Install and enable the bridge in Desktop, explicitly allow the connection, then ask Codex to connect to Desktop DSH |
 
-See the [Desktop bridge guide](plugins/codex-subagent-dsh/dsh-desktop-bridge/README.md) for installation, authorization and removal. This is a community component, not an official built-in DSH feature. Copy the entire bundle to a stable versioned directory outside the disposable Codex cache and use Desktop's plugin installation interface. Do not use `dsh plugin --profile desktop`: the current CLI refuses to manage that profile. Check for active work before reloading Desktop.
+See the [Desktop bridge guide](plugins/codex-subagent-dsh/dsh-plugin/README.md) for installation, authorization and removal. This is a community component, not an official built-in DSH feature. Copy the entire bundle to a stable versioned directory outside the disposable Codex cache and use Desktop's plugin installation interface. Do not use `dsh plugin --profile desktop`: the current CLI refuses to manage that profile. Check for active work before reloading Desktop.
 
 Codex can pass `connectionMode: web | desktop | auto` on the first `dsh_status` or `dsh_connect` call. Auto prefers Web and checks Desktop only when the Web port is unreachable. An explicit `DSH_SUBAGENT_URL` without a mode preserves fixed-address behavior. `DSH_CONNECTION_MODE` sets the default mode.
 
 - Successful responses identify the selected mode and address. Specify which instance to use when both run.
 - Desktop metadata and credentials use a dedicated `codex-desktop` subdirectory under `DSH_SUBAGENT_HOME` (default `~/.codex-subagent-dsh/codex-desktop`). The Aotu assistant keeps its original root-level connection files, so both components may remain enabled.
-- Desktop never falls back to or copies the old root-level grant. Explicitly allow the new component once after upgrading. Discovery does not scan ports, read browser cookie databases, or ask for tokens in chat.
+- Desktop never falls back to or copies the old root-level grant. When migrating from the early shared-grant implementation, allow it once; for a 0.5.0 migration, first check whether the existing namespaced grant remains valid. Discovery does not scan ports, read browser cookie databases, or ask for tokens in chat.
 - The MCP process binds its selected backend. Switching backends or restarting Desktop requires a new Codex conversation and, for a new Desktop instance, authorization again. Authentication failures never trigger fallback.
 - Deduplication and recovery are origin-scoped. A new port cannot recover an old task; inspect it in DSH and never resubmit an unknown task automatically.
 - `ready` means basic connectivity only. Exact model selection requires a supported catalog from `includeModels: true`. Desktop without routing can still use its current default for ordinary tasks; an explicitly requested model must not silently fall back or change the shared default.
 
-Per-task Desktop model selection additionally needs the bundled **companion 0.4.1**. Copy its full directory to a stable versioned path, install it through Desktop plugin management, and enable it. The Desktop bridge handles authorization; the companion handles session model routing. Companion 0.4.0 excludes Desktop 0.2.1-rc.2 from its dependency ranges and can be skipped by the loader. Confirm availability with `dsh_status { connectionMode: "desktop", includeModels: true }`, then copy exact provider/model/reasoningEffort identifiers from that catalog. See the [companion guide](plugins/codex-subagent-dsh/dsh-companion/README.md).
+The unified DSH plugin includes model and reasoning selection; no separate companion installation is needed. Check `dsh_status { connectionMode: "desktop", includeModels: true }` before choosing exact catalog identifiers. Existing users must follow the [migration guide](plugins/codex-subagent-dsh/dsh-plugin/README.md): disable the two old Codex components, retain grants, and leave the Aotu assistant intact.
 
-See the [dual-host plan](docs/WEB_DESKTOP_PLAN.md), [Desktop validation](docs/DESKTOP_CONNECTION_VERIFICATION.md) and [compatibility record](docs/COMPATIBILITY.md). The quick start below is for Web only; Desktop users should follow the component guide above. Actual UI installation, user approval/rejection, coexistence, and concurrent DeepSeek Flash/low and swe-2/high tasks passed on macOS Desktop 0.2.1-rc.2. The complete UI flow for reauthorization after restarting Desktop has not yet been tested.
+See the [dual-host plan](docs/WEB_DESKTOP_PLAN.md), [Desktop validation](docs/DESKTOP_CONNECTION_VERIFICATION.md) and [compatibility record](docs/COMPATIBILITY.md). The quick start below is for Web only; Desktop users should follow the component guide above. For 0.5.0, actual UI installation, user approval/rejection, coexistence, and concurrent DeepSeek Flash/low and swe-2/high tasks passed on macOS Desktop 0.2.1-rc.2. The complete UI flow for reauthorization after restarting Desktop has not yet been tested. Version 0.6.0 has passed isolated Web/Desktop 0.2.1-rc.2 host probes; local Desktop migration and real swe-2/high and DeepSeek Flash/low tasks have also passed; the release is not published.
 
 ## Web quick start
 
@@ -42,10 +42,10 @@ See the [dual-host plan](docs/WEB_DESKTOP_PLAN.md), [Desktop validation](docs/DE
    ```
 
 2. Start the existing local DSH instance (default `http://127.0.0.1:3080`) and sign into its browser UI. Codex conversations share this instance.
-3. Ask Codex to install the bundled `dsh-companion` into that DSH profile. Browser pairing and per-session model selection require the companion; no repository clone or build is needed:
+3. Ask Codex to install the bundled `dsh-plugin` into that DSH profile. Browser pairing and per-session model selection require the companion; no repository clone or build is needed:
 
    ```bash
-   dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
+   dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-plugin"
    ```
 
    Replace `web` with the actual Web profile if needed; do not substitute `desktop`. Check for running tasks before restarting the shared instance. Codex can locate the installed directory from its Skill path. Prefer copying the complete companion into a stable, versioned local data directory before installation, retaining the previous version for rollback. If installing directly from the Codex cache, rebind it after cache upgrades or removal.
@@ -63,10 +63,10 @@ See the [dual-host plan](docs/WEB_DESKTOP_PLAN.md), [Desktop validation](docs/DE
 - DSH running on a local loopback address; the default is `http://127.0.0.1:3080`
 - Web requires its native browser login; Desktop uses its in-app authorization interface
 
-Web browser pairing and optional per-Session model pinning require the bundled DSH companion in the same DSH profile that Codex addresses. The companion ships inside the plugin root installed from the marketplace, so regular users can point at `<installed-plugin-root>/dsh-companion` directly — no repository clone or npm build is needed. Repository developers may use the in-repo path instead:
+Web browser pairing and optional per-Session model pinning require the bundled DSH companion in the same DSH profile that Codex addresses. The companion ships inside the plugin root installed from the marketplace, so regular users can point at `<installed-plugin-root>/dsh-plugin` directly — no repository clone or npm build is needed. Repository developers may use the in-repo path instead:
 
 ```bash
-dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-companion"
+dsh plugin --profile web add -w "/absolute/path/to/installed-plugin/dsh-plugin"
 ```
 
 Restart that profile after installation. For Desktop, install through the client plugin manager; the tested combination is Desktop 0.2.1-rc.2 / Cordis 4.0.5. The companion never changes DSH's shared default model. The Web compatibility gate covers `@deepseek-ai/dsh` 0.1.5-rc.1, its resolved `dsh-agent`/Session Controller/Connection 0.1.5-rc.2 packages, and Cordis 4.0.2. Re-run the isolated host probe for other combinations.
@@ -173,7 +173,7 @@ To select a model, first call `dsh_status` with `includeModels: true`, then copy
 - A task is `unknown`: call `dsh_task` again with the original `taskId` and `conversationKey`. The plugin performs a bounded read of the original session to look for a provable terminal state. It does not create or resubmit the task. If evidence remains insufficient, inspect DSH and the workspace; a write-task reservation is not released early.
 - A cancelled task remains `cancel_requested`: this only proves that the cancellation request was sent. Wait for a confirmed terminal state. Existing file changes are not reverted automatically.
 - Codex cannot find the tools: confirm that the plugin is installed and enabled, and open a new conversation after an update. Then verify the built artifacts and manifest; see `docs/COMPATIBILITY.md`.
-- `MODEL_ROUTING_COMPANION_MISSING`: for Web, install the bundled companion into the connected profile and safely restart it. For Desktop, install and enable companion 0.4.1 through the client, then check the model catalog. Do not substitute `session/selectModel`, which writes the shared default.
+- `MODEL_ROUTING_COMPANION_MISSING`: for Web, install the bundled companion into the connected profile and safely restart it. For Desktop, install and enable the unified DSH plugin through the client, then check the model catalog. Do not substitute `session/selectModel`, which writes the shared default.
 - `MODEL_ROUTING_CAPABILITY_UNSUPPORTED` or a model configuration failure: refresh `dsh_status` with `includeModels: true` and verify the exact provider/model/effort. The bridge does not choose a fallback model.
 
 ## Current limitations

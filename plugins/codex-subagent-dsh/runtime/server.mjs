@@ -42304,7 +42304,7 @@ function desktopStatus(status) {
     guidance: "Start DSH desktop and authorize its connection bridge, then open a new Codex conversation. The selected backend will not change in this process."
   } : {} };
 }
-var server = new McpServer({ name: "codex-subagent-dsh", version: "0.5.0" });
+var server = new McpServer({ name: "codex-subagent-dsh", version: "0.6.0" });
 var connectCommand = `node ${JSON.stringify(fileURLToPath(new URL("./connect.mjs", import.meta.url)))}`;
 var key = external_exports.string().min(1).max(128);
 var connectionMode = external_exports.enum(["auto", "web", "desktop"]).optional().describe("Select a backend on the first call. auto prefers reachable Web, then authorized Desktop. Once selected, changing backend requires a new Codex conversation.");

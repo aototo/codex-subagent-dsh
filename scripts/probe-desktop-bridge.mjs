@@ -13,7 +13,7 @@ if (!app) throw Error('Set DSH_DESKTOP_APP to the installed .app directory. This
 const resource = path.join(app, 'Contents/Resources');
 const archive = path.join(resource, 'app.asar');
 const node = path.join(resource, 'runtime/primary-runtime/dependencies/node/bin/node');
-const bundle = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../plugins/codex-subagent-dsh/dsh-desktop-bridge');
+const bundle = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../plugins/codex-subagent-dsh/dsh-plugin');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let temporary, child;
 async function stop() {

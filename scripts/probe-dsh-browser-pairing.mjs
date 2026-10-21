@@ -51,10 +51,10 @@ function openUrl(url) {
 try {
   home = await mkdtemp(join(tmpdir(), 'codex-browser-pairing-'));
   await chmod(home, 0o700);
-  const env = { ...process.env, DSH_HOME: home };
+  const env = { ...process.env, DSH_HOME: home, DSH_SUBAGENT_HOME: join(home, 'isolated-state') };
   for (const args of [
     ['--profile', profile, '--from-default-profile', 'web', '--dump-config'],
-    ['plugin', '--profile', profile, 'add', '-w', join(repo, 'plugins/codex-subagent-dsh/dsh-companion')],
+    ['plugin', '--profile', profile, 'add', '-w', join(repo, 'plugins/codex-subagent-dsh/dsh-plugin')],
   ]) {
     const result = spawnSync(process.execPath, [bin, ...args], { env, encoding: 'utf8', timeout: 20_000 });
     assert.equal(result.status, 0, 'isolated DSH setup failed; output withheld');
